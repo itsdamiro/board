@@ -1,0 +1,9 @@
+
+# AI assistant & editor tooling — never committed
+.agents/
+.claude/
+.gemini/
+.cursor/
+CLAUDE.md
+GEMINI.md
+docs/HANDOFF.md
