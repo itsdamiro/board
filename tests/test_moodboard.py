@@ -1,0 +1,277 @@
+"""Tests for board/moodboard.py, on synthetic text only."""
+
+import unittest
+
+from board import moodboard as m
+
+ID = "2026-10-15-1432-a3f9"
+ID2 = "2026-10-15-1500-00ff"
+FULL = f"![[{ID}.png]]\nA quiet layout with a lot of space.\n[source](https://example.com/page)"
+BARE = "A color combination to try for the footer."
+FM = "---\ntype: moodboard\n---\n"
+
+
+def keys(text):
+    return [b.key for b in m.parse(text)]
+
+
+class ParseTest(unittest.TestCase):
+    def test_a_full_block(self):
+        (b,) = m.parse(FULL + "\n")
+        self.assertEqual((b.embed, b.image_id, b.ext), (f"![[{ID}.png]]", ID, "png"))
+        self.assertEqual((b.description, b.source), ("A quiet layout with a lot of space.", "https://example.com/page"))
+        self.assertEqual((b.start, b.end, b.text), (0, 3, FULL))
+
+    def test_a_block_with_no_image(self):
+        (b,) = m.parse(BARE + "\n[source](https://example.com)\n")
+        self.assertEqual((b.embed, b.image_id, b.description, b.source), (None, None, BARE, "https://example.com"))
+
+    def test_a_block_with_no_address(self):
+        (b,) = m.parse(f"![[{ID}.webp]]\nonly words\n")
+        self.assertEqual((b.image_id, b.ext, b.description, b.source), (ID, "webp", "only words", None))
+
+    def test_a_block_with_extra_lines_keeps_them_in_the_description(self):
+        (b,) = m.parse(f"![[{ID}.gif]]\nline one\nline two\nline three\n[source](http://a.b)\n")
+        self.assertEqual(b.description, "line one\nline two\nline three")
+
+    def test_an_image_alone_and_an_address_alone(self):
+        image, address = m.parse(f"![[{ID}.jpg]]\n\n[source](https://a.b/c)\n")
+        self.assertEqual((image.image_id, image.description, image.source), (ID, "", None))
+        self.assertEqual((address.embed, address.description, address.source), (None, "", "https://a.b/c"))
+
+    def test_blocks_come_in_file_order_with_their_line_spans(self):
+        a, b = m.parse(f"{FULL}\n\n  \n{BARE}\n")
+        self.assertEqual(((a.start, a.end), (b.start, b.end)), ((0, 3), (5, 6)))
+
+    def test_frontmatter_and_headings_are_not_items(self):
+        blocks = m.parse(f"{FM}# Moodboard\n\n## Later\n\n{BARE}\n")
+        self.assertEqual([b.description for b in blocks], [BARE])
+
+    def test_a_hashtag_is_not_a_heading(self):
+        self.assertEqual([b.description for b in m.parse("#inspiration for later\n")], ["#inspiration for later"])
+
+    def test_a_note_with_a_byte_order_mark_still_has_its_frontmatter_skipped(self):
+        self.assertEqual([b.description for b in m.parse("\ufeff" + FM + "\n" + BARE + "\n")], [BARE])
+
+    def test_frontmatter_that_never_closes_is_refused(self):
+        with self.assertRaises(m.MoodboardError):
+            m.parse("---\ntype: moodboard\n" + BARE + "\n")
+
+    def test_carriage_returns_do_not_change_a_block_or_its_key(self):
+        lf, crlf = m.parse(FULL + "\n")[0], m.parse(FULL.replace("\n", "\r\n") + "\r\n")[0]
+        self.assertEqual((lf.key, lf.text, crlf.description), (crlf.key, crlf.text, lf.description))
+
+    def test_an_address_that_is_not_http_stays_in_the_description(self):
+        for line in ("[source](javascript:alert1)", "[source](ftp://a.b/c)", "[source](http://[x)", "[source](//a.b)"):
+            with self.subTest(line=line):
+                (b,) = m.parse(f"words\n{line}\n")
+                self.assertEqual((b.source, b.description), (None, f"words\n{line}"))
+
+    def test_an_embed_that_is_not_an_id_made_here_names_no_image(self):
+        for name in ("photo.png", "../../etc/passwd.png", "Board/x/" + ID + ".png", "note"):
+            with self.subTest(name=name):
+                (b,) = m.parse(f"![[{name}]]\nwords\n")
+                self.assertEqual((b.image_id, b.ext, b.embed, b.description), (None, None, f"![[{name}]]", "words"))
+
+    def test_digits_of_another_script_do_not_make_an_id(self):
+        positions = [i for i, c in enumerate(ID) if c.isdigit()]
+        for i in positions:  # one digit at a time, so every group of the pattern is checked
+            other = ID[:i] + chr(0x660 + int(ID[i])) + ID[i + 1:]
+            with self.subTest(position=i):
+                self.assertIsNone(m.parse(f"![[{other}.png]]\nx\n")[0].image_id)
+                with self.assertRaises(m.MoodboardError):
+                    m.format_block("x", other, "png")
+
+    def test_the_id_suffix_is_four_lowercase_hex_digits(self):
+        for bad in ("2026-10-15-1432-a3g9", "2026-10-15-1432-A3F9", "2026-10-15-1432-a3f", "2026-10-15-1432-a3f90", "2026-10-15-1432"):
+            with self.subTest(id=bad):
+                self.assertIsNone(m.parse(f"![[{bad}.png]]\nx\n")[0].image_id)
+
+    def test_an_item_under_a_heading_with_no_blank_line_is_part_of_the_heading(self):
+        self.assertEqual(m.parse(f"# Ideas\n![[{ID}.png]]\nwords\n\n{BARE}\n")[0].description, BARE)
+
+    def test_an_embed_with_a_size_or_a_capital_extension_still_names_its_image(self):
+        self.assertEqual(m.parse(f"![[{ID}.png|300]]\nx\n")[0].image_id, ID)
+        self.assertEqual(m.parse(f"![[{ID}.PNG]]\nx\n")[0].ext, "png")
+
+    def test_text_after_an_embed_or_a_source_on_the_same_line_means_it_is_neither(self):
+        (a,) = m.parse(f"![[{ID}.png]] and more\nwords\n")
+        self.assertEqual((a.image_id, a.embed, a.description), (None, f"![[{ID}.png]] and more", "words"))
+        (b,) = m.parse("words\n[source](https://a.b) and more\n")
+        self.assertEqual((b.source, b.description), (None, "words\n[source](https://a.b) and more"))
+
+    def test_a_change_of_spaces_alone_changes_the_key(self):
+        for before, after in (("words", "words "), ("words", " words"), ("two words", "two  words")):
+            with self.subTest(before=before):
+                self.assertNotEqual(m.parse(before)[0].key, m.parse(after)[0].key)
+                with self.assertRaises(m.BlockNotFound):
+                    m.remove(after + "\n", m.parse(before)[0].key)
+
+    def test_key_is_the_hash_of_the_exact_text(self):
+        a, b = m.parse(FULL + "\n\n" + FULL.replace("quiet", "loud") + "\n")
+        self.assertNotEqual(a.key, b.key)
+        self.assertEqual(len(a.key), 64)
+
+
+class FormatTest(unittest.TestCase):
+    def test_each_shape_of_item(self):
+        self.assertEqual(m.format_block("words", ID, "png", "https://example.com/p"),
+                         f"![[{ID}.png]]\nwords\n[source](https://example.com/p)")
+        self.assertEqual(m.format_block("words"), "words")
+        self.assertEqual(m.format_block("", ID, "gif"), f"![[{ID}.gif]]")
+        self.assertEqual(m.format_block("", source="https://a.b"), "[source](https://a.b)")
+
+    def test_what_is_written_reads_back_the_same(self):
+        for image in (None, (ID, "jpeg")):
+            for description in ("", "some words, with #tag and (parens)"):
+                for source in (None, "https://a.b/c?d=1&e=2#f"):
+                    if not (image or description or source):
+                        continue
+                    with self.subTest(image=image, description=description, source=source):
+                        text = m.format_block(description, *(image or (None, None)), source) + "\n"
+                        (b,) = m.parse(text)
+                        self.assertEqual((b.image_id, b.ext, b.description, b.source),
+                                         (image[0] if image else None, image[1] if image else None, description, source))
+
+    def test_surrounding_spaces_are_dropped(self):
+        self.assertEqual(m.format_block("  words \t", source=" https://a.b "), "words\n[source](https://a.b)")
+
+    def test_brackets_in_an_address_are_made_safe_and_still_read_back(self):
+        block = m.format_block("x", source="https://a.b/(c)")
+        self.assertEqual(block, "x\n[source](https://a.b/%28c%29)")
+        self.assertEqual(m.parse(block)[0].source, "https://a.b/%28c%29")
+
+    def test_input_the_reader_would_misread_is_refused(self):
+        bad = [
+            dict(description="two\nlines"), dict(description="a\rb"), dict(description="# a heading"),
+            dict(description="###### six"), dict(description="#"), dict(description="![[x.png]]"),
+            dict(description="[source](https://a.b)"), dict(description="---"),
+            dict(description=""), dict(description="   "),
+            dict(description="x", image_id="photo", ext="png"), dict(description="x", image_id=ID, ext="svg"),
+            dict(description="x", image_id=ID, ext="PNG"), dict(description="x", image_id=ID),
+            dict(description="x", ext="png"), dict(description="x", image_id="../" + ID, ext="png"),
+            dict(description="x", source="javascript:alert(1)"), dict(description="x", source="ftp://a.b"),
+            dict(description="x", source="https://a b"), dict(description="x", source="https://"),
+            dict(description="x", source="http://[x"), dict(description="x", source=""),
+        ]
+        for kwargs in bad:
+            with self.subTest(**kwargs), self.assertRaises(m.MoodboardError):
+                m.format_block(**kwargs)
+
+    def test_a_tag_that_is_not_a_heading_is_accepted(self):
+        self.assertEqual(m.format_block("#inspiration"), "#inspiration")
+
+
+class AppendTest(unittest.TestCase):
+    NEW = m.format_block("the new one", ID2, "png")
+
+    def appended(self, text):
+        out = m.append(text, self.NEW)
+        self.assertTrue(out.startswith(text), "append changed existing text")
+        self.assertEqual(m.parse(out)[-1].text, self.NEW)
+        return out
+
+    def test_after_a_blank_line_at_the_end(self):
+        self.assertEqual(self.appended(f"{FM}\n{FULL}\n"), f"{FM}\n{FULL}\n\n{self.NEW}\n")
+
+    def test_every_shape_of_ending_gets_one_blank_line_before_the_block(self):
+        cases = {"": "\n\n", "\n": "\n\n", "\n\n": "\n\n", "\n\n\n": "\n\n\n", "\n  \n": "\n  \n", "\n ": "\n \n", " ": " \n\n"}
+        for tail, kept in cases.items():
+            with self.subTest(tail=tail):
+                self.assertEqual(self.appended(BARE + tail), f"{BARE}{kept}{self.NEW}\n")
+
+    def test_an_empty_note_and_a_frontmatter_only_note(self):
+        self.assertEqual(self.appended(""), self.NEW + "\n")
+        self.assertEqual(self.appended("\n"), "\n" + self.NEW + "\n")
+        self.assertEqual(self.appended(FM), f"{FM}\n{self.NEW}\n")
+
+    def test_a_note_that_uses_carriage_returns_keeps_using_them(self):
+        text = f"{FM}\n{FULL}\n".replace("\n", "\r\n")
+        out = self.appended(text)
+        self.assertEqual(out.count("\n"), out.count("\r\n"))
+        self.assertTrue(out.endswith(self.NEW.replace("\n", "\r\n") + "\r\n"))
+
+    def test_a_note_with_mixed_line_endings_gets_plain_ones(self):
+        self.assertEqual(self.appended("a\r\nb\n"), f"a\r\nb\n\n{self.NEW}\n")
+
+    def test_text_after_the_items_is_not_moved(self):
+        text = f"{BARE}\n\n## Notes\nsomething the owner wrote\n"
+        self.assertEqual(self.appended(text), f"{text}\n{self.NEW}\n")
+
+    def test_frontmatter_that_never_closes_is_refused(self):
+        with self.assertRaises(m.MoodboardError):
+            m.append("---\ntype: x\n", self.NEW)
+
+    def test_a_block_that_is_not_one_block_is_refused(self):
+        for block in ("one\n\ntwo", "", "  ", "a\r\nb", "a\n \nb"):
+            with self.subTest(block=block), self.assertRaises(m.MoodboardError):
+                m.append("x\n", block)
+
+
+class RemoveTest(unittest.TestCase):
+    A, B, C = FULL, BARE, "third"
+
+    def three(self, tail="\n"):
+        return f"{FM}\n{self.A}\n\n{self.B}\n\n{self.C}{tail}"
+
+    def remove(self, text, index):
+        return m.remove(text, m.parse(text)[index].key)
+
+    def test_the_first_the_middle_and_the_last_block(self):
+        self.assertEqual(self.remove(self.three(), 0)[0], f"{FM}\n{self.B}\n\n{self.C}\n")
+        self.assertEqual(self.remove(self.three(), 1)[0], f"{FM}\n{self.A}\n\n{self.C}\n")
+        self.assertEqual(self.remove(self.three(), 2)[0], f"{FM}\n{self.A}\n\n{self.B}\n")
+
+    def test_the_last_block_with_no_newline_at_the_end(self):
+        self.assertEqual(self.remove(self.three(""), 2)[0], f"{FM}\n{self.A}\n\n{self.B}\n")
+
+    def test_the_only_block_and_a_block_with_no_blank_line_before_it(self):
+        self.assertEqual(self.remove(f"{FM}\n{self.A}\n", 0)[0], FM)
+        self.assertEqual(self.remove(f"{FM}{self.A}\n\n{self.B}\n", 0)[0], f"{FM}\n{self.B}\n")
+
+    def test_the_first_line_of_a_note_leaves_no_blank_line_at_the_top(self):
+        self.assertEqual(self.remove(f"{self.A}\n\n{self.B}\n", 0)[0], f"{self.B}\n")
+
+    def test_the_first_block_of_a_note_with_no_newline_at_the_end(self):
+        self.assertEqual(self.remove(f"{self.A}\n\n{self.B}", 0)[0], self.B)
+
+    def test_it_returns_the_block_it_removed(self):
+        text = self.three()
+        block = m.parse(text)[0]
+        self.assertEqual(m.remove(text, block.key)[1], block)
+
+    def test_nothing_but_that_block_goes(self):
+        text = f"{FM}# Title\n\n{self.A}\n\nintro that is an item\n\n## Heading\n\n{self.C}\n"
+        blocks = m.parse(text)
+        for i, gone in enumerate(blocks):
+            with self.subTest(removed=gone.text):
+                out, _ = m.remove(text, gone.key)
+                self.assertEqual([b.text for b in m.parse(out)], [b.text for j, b in enumerate(blocks) if j != i])
+                for line in ("# Title", "## Heading", "type: moodboard"):
+                    self.assertIn(line, out)
+                self.assertNotIn("\n\n\n", out)
+
+    def test_carriage_returns_in_the_rest_of_the_note_are_kept(self):
+        text = self.three().replace("\n", "\r\n")
+        out, _ = self.remove(text, 1)
+        self.assertEqual(out, f"{FM}\n{self.A}\n\n{self.C}\n".replace("\n", "\r\n"))
+
+    def test_a_block_changed_since_it_was_shown_is_refused(self):
+        shown = m.parse(self.three())[1].key
+        with self.assertRaises(m.BlockNotFound):
+            m.remove(self.three().replace(self.B, self.B + " edited"), shown)
+        with self.assertRaises(m.BlockNotFound):
+            m.remove(self.three(), "0" * 64)
+
+    def test_two_blocks_with_the_same_text_are_not_guessed_between(self):
+        text = f"{self.B}\n\n{self.C}\n\n{self.B}\n"
+        with self.assertRaises(m.AmbiguousBlock):
+            m.remove(text, m.parse(text)[0].key)
+
+    def test_frontmatter_that_never_closes_is_refused(self):
+        with self.assertRaises(m.MoodboardError):
+            m.remove("---\nx\n" + self.B + "\n", "0" * 64)
+
+
+if __name__ == "__main__":
+    unittest.main()
