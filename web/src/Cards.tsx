@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Minus, Plus } from "lucide-react";
 import { orderCards, type Card } from "./cardOrder";
-import { autoColumns, clampColumns, columnRange, PAGE_PADDING, readColumns, writeColumns, type Range } from "./columns";
+import type { Columns } from "./useColumns";
 import Viewer from "./Viewer";
 import type { Brand, Item, Panel } from "./api";
 
@@ -71,37 +70,16 @@ function Body({ card, onView }: { card: Card; onView: (opener: HTMLElement) => v
   return <ItemCard item={card.item} onView={onView} />;
 }
 
-function ColumnButtons({ value, range, onChange }: { value: number; range: Range; onChange: (count: number) => void }) {
-  const button =
-    "flex size-7 items-center justify-center rounded-full hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-transparent";
-  return (
-    <fieldset className="fixed right-4 bottom-4 flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-card-foreground shadow-md">
-      <legend className="sr-only">Columns</legend>
-      <button type="button" aria-label="Fewer columns" disabled={value <= range.min} onClick={() => onChange(value - 1)} className={button}>
-        <Minus aria-hidden="true" className="size-4" />
-      </button>
-      <output aria-live="polite" aria-label="Columns shown" className="w-4 text-center tabular-nums">
-        {value}
-      </output>
-      <button type="button" aria-label="More columns" disabled={value >= range.max} onClick={() => onChange(value + 1)} className={button}>
-        <Plus aria-hidden="true" className="size-4" />
-      </button>
-    </fieldset>
-  );
-}
-
 /** `adder` is the box that takes a pasted or dropped image; it is the first card, before the brand's own. */
-export default function Cards({ brand, adder }: { brand: Brand; adder?: ReactNode }) {
+export default function Cards({ brand, adder, columns }: { brand: Brand; adder?: ReactNode; columns: Columns }) {
   const cards = orderCards(brand);
   // The viewer steps through the images in the order of the cards, so previous and next are the neighbours the owner sees.
   const gallery = cards.flatMap((card) => (card.kind === "item" && card.item.image !== null ? [{ key: card.key, item: card.item }] : []));
   const [viewing, setViewing] = useState<string | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const viewed = gallery.findIndex((entry) => entry.key === viewing);
-  const [chosen, setChosen] = useState<number | null>(() => readColumns());
-  // The stage is the list's own width, so the count follows the room the cards have, not the window's.
   const [stage, setStage] = useState<HTMLUListElement | null>(null);
-  const [width, setWidth] = useState(() => window.innerWidth - PAGE_PADDING); // a guess until the stage is measured
+  const { setWidth, chosen, count, choosable } = columns;
   useEffect(() => {
     if (stage === null) return;
     const follow = () => {
@@ -111,11 +89,8 @@ export default function Cards({ brand, adder }: { brand: Brand; adder?: ReactNod
     const watcher = new ResizeObserver(follow);
     watcher.observe(stage);
     return () => watcher.disconnect();
-  }, [stage]);
+  }, [stage, setWidth]);
   if (cards.length === 0 && adder === undefined) return null;
-  const range = columnRange(width);
-  const count = chosen === null ? autoColumns(width) : clampColumns(chosen, range); // the choice is kept, only shown within the range
-  const choosable = range.min < range.max; // a phone has one column and no buttons
   return (
     <>
       <ul ref={setStage} aria-label="Cards" className="gap-4" style={{ columns: chosen === null && choosable ? "18rem" : count }}>
@@ -134,16 +109,6 @@ export default function Cards({ brand, adder }: { brand: Brand; adder?: ReactNod
           onClose={() => {
             setViewing(null);
             opener.current?.focus();
-          }}
-        />
-      )}
-      {cards.length > 0 && choosable && (
-        <ColumnButtons
-          value={count}
-          range={range}
-          onChange={(next) => {
-            setChosen(next);
-            writeColumns(next);
           }}
         />
       )}

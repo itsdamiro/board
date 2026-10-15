@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { getBrand, listBrands, type Brand } from "./api";
 import BrandSelect from "./BrandSelect";
 import Cards from "./Cards";
+import ColumnButtons from "./ColumnButtons";
 import Composer from "./Composer";
 import { readLastBrand, writeLastBrand } from "./lastBrand";
+import { orderCards } from "./cardOrder";
 import ThemeToggle from "./ThemeToggle";
+import { useColumns } from "./useColumns";
 
 function message(failure: unknown): string {
   return failure instanceof Error ? failure.message : "Something went wrong.";
@@ -16,6 +19,7 @@ export default function App() {
   const [brand, setBrand] = useState<Brand | null>(null);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const columns = useColumns();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -72,12 +76,15 @@ export default function App() {
 
 
   return (
-    <div className="flex flex-col gap-6 p-6 pb-20">
+    <div className="flex flex-col gap-6 p-6">
       <header className="flex items-center justify-between gap-4">
         <h1>
           {brands !== null && brands.length > 0 ? <BrandSelect brands={brands} current={slug} onChoose={choose} /> : <span className="px-2 text-3xl">Board</span>}
         </h1>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          {brand !== null && columns.choosable && orderCards(brand).length > 0 && <ColumnButtons columns={columns} />}
+          <ThemeToggle />
+        </div>
       </header>
       <main className="flex min-w-0 flex-col gap-6">
         {error !== null && (
@@ -102,7 +109,7 @@ export default function App() {
                 {brand.moodboard.problem}
               </p>
             )}
-            <Cards brand={brand} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
+            <Cards columns={columns} brand={brand} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
           </>
         )}
       </main>

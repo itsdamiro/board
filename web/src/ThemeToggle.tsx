@@ -2,7 +2,7 @@ import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { applyTheme, flip, readChoice, resolve, safeStorage, writeChoice, type Choice } from "./theme";
 
-// One icon that flips light and dark (ADR 002, amendment on the cards). With nothing remembered the page follows the system.
+// One icon, in a round button like the column pill beside it, that flips light and dark (ADR 002, amendments on the cards). With nothing remembered the page follows the system.
 
 export default function ThemeToggle() {
   const [choice, setChoice] = useState<Choice>(() => readChoice(safeStorage()));
@@ -30,7 +30,7 @@ export default function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-label={shown === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      className="flex items-center justify-center rounded-full border border-border bg-card p-2 text-card-foreground shadow-md hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
     >
       <Icon aria-hidden="true" className="size-5" />
     </button>
