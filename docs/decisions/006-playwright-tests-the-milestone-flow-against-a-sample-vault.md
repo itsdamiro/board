@@ -53,3 +53,7 @@ Open: which browser the owner uses day to day (WebKit would then be added); whet
 - **Running the suite against the Vite dev server and its proxy.** Tests ADR 004's proxy for free, but ties the milestone check to a development convenience and hides what production serves. Would be right if the proxy grew logic worth testing in a browser.
 - **The owner's real vault, read-only.** Closer to life, but puts brand names and client images in the test's reach and in its failure output, against `CLAUDE.md`. Never right here.
 - **All three browsers from the start.** Wider cover, three times the download and runtime. Would be right once the owner uses Safari or Firefox for the app.
+
+## Amendment (2026-10-15): the e2e gate arrives with the first end-to-end test
+
+Decision 8 said the `e2e` gate is added with the scaffold. The scaffold has no flow to test yet, so a gate then could not fail, and it also needs the server to serve `web/dist/` first. The gate (and the sample-vault script of decision 4) is added with the first end-to-end test, in slice 3b after the server serves the built page. Nothing else in the decision changes.

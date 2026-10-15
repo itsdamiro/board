@@ -13,3 +13,9 @@ docs/HANDOFF.md
 
 # The virtual environment holding Pillow (README: how to create it)
 .venv/
+
+# The page's installed packages and its build output (ADR 002: the gates build it, the repository holds source only)
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/

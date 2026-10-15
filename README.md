@@ -4,7 +4,7 @@ A small local web app for brand work. It shows a brand's notes from your Markdow
 
 ## Status
 
-Work in progress: the code that reads a vault and reads and writes a Moodboard's blocks, the image intake with thumbnails, and the local API all exist and are tested (`board/`, listed in [`docs/reference/API.md`](docs/reference/API.md)); there is no page yet, so nothing but a script or `curl` can use it. The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
+Work in progress: the code that reads a vault and reads and writes a Moodboard's blocks, the image intake with thumbnails, and the local API all exist and are tested (`board/`, listed in [`docs/reference/API.md`](docs/reference/API.md)); the page is only scaffolded (`web/`: the toolchain, the theme switch and a placeholder), so nothing but a script or `curl` can use the API yet. The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
 
 ## What it will do
 
@@ -26,7 +26,7 @@ It never edits another note and never edits a block. Deleting an item removes on
 
 **Back up your vault, and the `Board/` folder, before first use.** `Board/` is meant to be kept out of git, so nothing else holds a copy of your images. The software is provided as is, with no warranty (see the licence).
 
-## Run the server (no page yet)
+## Run the server (the page is not served yet)
 
 ```
 python3 -m venv .venv
@@ -36,10 +36,21 @@ python3 -m venv .venv
 
 It answers only on `127.0.0.1`. Back up your vault first (see above).
 
+## Work on the page
+
+```
+nvm use                  # Node 24 from .nvmrc
+cd web && npm ci
+npm run dev              # http://127.0.0.1:5173, with /api sent on to the server below (BOARD_PORT, default 8765)
+npm run typecheck && npm run lint && npm test && npm run build
+```
+
+Start the server first (`python -m board --vault ...`). The dev server refuses a request that does not come from its own page before it forwards anything (ADR 004).
+
 ## Requirements
 
 - Python 3.11 or newer (the server and the vault code), with [Pillow](https://python-pillow.org/) for thumbnails (`requirements.txt`).
-- Planned, for the page: Node and npm, to build it (React, TypeScript, Vite, Tailwind). Not needed to run a copy that is already built.
+- For the page: Node 24 and npm, to build it (React, TypeScript, Vite, Tailwind; ADR 005). `nvm install` reads `.nvmrc`; then `cd web && npm ci`. Not needed to run a copy that is already built.
 - A vault that follows the layout above. The vault path is given as an argument or an environment variable; it is never stored in the code.
 
 ## Security

@@ -1,0 +1,9 @@
+{
+  "plugins": ["react", "typescript", "jsx-a11y"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "react/no-danger": "error",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error"
+  }
+}
