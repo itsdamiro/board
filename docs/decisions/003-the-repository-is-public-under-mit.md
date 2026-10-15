@@ -62,3 +62,13 @@ Decision 3 says the private-terms check is a gate added before the first push. T
 ## Amendment (2026-10-15): the gate is written
 
 The gate is `scripts/private_check.py`, the gates `private` and `tests` in `scripts/gates.conf`, and the private-terms file is `.private-terms` at the repository root, gitignored. It checks the path and text of every tracked file (a new file counts once it is added to the index), for a home-directory path and for any term in the file, ignoring case, and it never prints the term. It fails if `.private-terms` is itself tracked. With no `.private-terms` the terms check is skipped with a visible note, so a fresh clone passes; the check protects the owner only once the owner has listed their terms. It does not scan history: a term or path in an earlier commit is not found, which is why a push that follows a history rewrite or a first publication still needs the manual scan.
+
+## Amendment (2026-10-16): the open items decided
+
+The owner accepted the assistant's recommendations on 2026-10-16.
+
+1. **Outside pull requests are not accepted for now.** `CONTRIBUTING.md` says so and keeps its rule that every commit is the owner's. Taking them later needs `CONTRIBUTING.md` rewritten first, in a record of its own.
+2. **Private vulnerability reporting is to be turned on** in the repository's settings (Settings, Code security), which only the owner can do. `SECURITY.md` relies on it; until it is on, its "Report a vulnerability" path does not exist.
+3. **The app is described as general:** any vault with the documented layout (`docs/reference/VAULT_LAYOUT.md`), not the owner's setup made public. A setting for other layouts is still a later record.
+4. **The concept `Safe file handling` stays** in the frontmatter.
+5. **Still open:** the owner has to create `.private-terms` (decision 3 and the second amendment above); the assistant cannot invent the terms.

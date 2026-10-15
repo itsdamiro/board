@@ -4,7 +4,7 @@ A small local web app for brand work. It shows a brand's notes from your Markdow
 
 ## Status
 
-Work in progress: the code that reads a vault and reads and writes a Moodboard's blocks, the image intake with thumbnails, and the local API all exist and are tested (`board/`, listed in [`docs/reference/API.md`](docs/reference/API.md)); the page (`web/`, which the server serves once built) lists the brands, shows a brand's notes and its grid of images, and adds an item from a pasted or dropped image, a pasted address and a description, in light and dark; deleting an item is not built yet (it waits on the vault's own record). The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
+Work in progress: the code that reads a vault and reads and writes a Moodboard's blocks, the image intake with thumbnails, and the local API all exist and are tested (`board/`, listed in [`docs/reference/API.md`](docs/reference/API.md)); the page (`web/`, which the server serves once built) lists the brands, shows a brand's notes and its grid of images, and adds an item from a pasted or dropped image, a pasted address and a description, in light and dark; an item can be deleted after a confirmation, one at a time or several picked with a shift-click. The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
 
 ## What it will do
 
@@ -59,7 +59,7 @@ The server listens on `127.0.0.1` only and refuses requests from other origins. 
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the repository's rules and [`docs/CODE_QUALITY_STANDARDS.md`](docs/CODE_QUALITY_STANDARDS.md) for how the work is done. Whether outside pull requests are accepted is not decided yet (ADR 003).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the repository's rules and [`docs/CODE_QUALITY_STANDARDS.md`](docs/CODE_QUALITY_STANDARDS.md) for how the work is done. Outside pull requests are not accepted for now (ADR 003).
 
 ## Licence
 

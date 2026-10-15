@@ -144,3 +144,7 @@ The owner asked in chat on 2026-10-16: "lets also put a key press shortcut to +/
 1. **The keys `+` and `-` press the plus and minus buttons from anywhere on the page.** `=` and `_`, the same keys without Shift, do the same, so a keyboard where `+` needs Shift works with one key. The key does nothing past the ends of the range, as the disabled button does nothing, and it exists only where the pill does (not on a phone, not with no cards).
 2. **Not while typing, and not as the browser's zoom.** A key typed into a field (the description, the address), a select or an editable element is the text's. With Ctrl, Cmd or Alt held, `+` and `-` stay the browser's zoom and the page does not take them.
 3. **The buttons say so:** each has a tooltip ("More columns (+)") and `aria-keyshortcuts`. Their accessible names are unchanged.
+
+## Amendment (2026-10-16): no mutation tool for the page's logic
+
+The last open item of the list above is decided, on the owner's acceptance of the assistant's recommendation: a mutation tool does not cover the page's logic. The page stays thin, and Vitest and the e2e flow (ADR 006) test it. This is revisited if the page's logic grows beyond what those tests can reasonably check.

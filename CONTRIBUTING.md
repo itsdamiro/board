@@ -1,5 +1,9 @@
 # Contributing
 
+## Outside contributions
+
+Outside pull requests are not accepted for now (ADR 003). Issues and private security reports are welcome; the rules below are the owner's own and do not yet fit contributors. If that changes, this file is rewritten first, under a record of its own.
+
 ## Repository hygiene
 
 These are strict, not aspirational.
