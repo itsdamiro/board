@@ -7,3 +7,6 @@
 CLAUDE.md
 GEMINI.md
 docs/HANDOFF.md
+
+# The owner's private terms for scripts/private_check.py: the list itself must never be committed
+.private-terms

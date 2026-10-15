@@ -44,7 +44,7 @@ Open:
 
 - Whether the repository takes outside pull requests. `CONTRIBUTING.md`'s rule that every commit is authored by the owner does not fit contributors; it is rewritten when the owner decides, in a record of its own.
 - Whether to turn on GitHub's private vulnerability reporting in the repository settings, which `SECURITY.md` relies on. Only the owner can do that.
-- The private-terms gate and its file (decision 3), to be written before the first push.
+- The private-terms gate (decision 3) is written, late: see the second amendment. The owner still has to create the private-terms file, which the gate skips with a note while it is missing.
 - Whether the app is described as general (any vault with this layout) or as the owner's setup made public. Decision 4 documents the layout; a settings option for other layouts is a later record.
 
 ## Alternatives rejected
@@ -58,3 +58,7 @@ Open:
 ## Amendment (2026-10-15): the first push came before the gate
 
 Decision 3 says the private-terms check is a gate added before the first push. The first push happened the same day, on the owner's instruction, before the gate was written. The assistant scanned the whole history by hand first, for home-directory paths, the vault's name and attribution trailers, and found only rule text that names them. The decision is unchanged: the gate is still due, it is the next piece of work, and any later push goes through it. Until it exists, a push needs the same manual scan.
+
+## Amendment (2026-10-15): the gate is written
+
+The gate is `scripts/private_check.py`, the gates `private` and `tests` in `scripts/gates.conf`, and the private-terms file is `.private-terms` at the repository root, gitignored. It checks the path and text of every tracked file (a new file counts once it is added to the index), for a home-directory path and for any term in the file, ignoring case, and it never prints the term. It fails if `.private-terms` is itself tracked. With no `.private-terms` the terms check is skipped with a visible note, so a fresh clone passes; the check protects the owner only once the owner has listed their terms. It does not scan history: a term or path in an earlier commit is not found, which is why a push that follows a history rewrite or a first publication still needs the manual scan.
