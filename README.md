@@ -4,7 +4,7 @@ A small local web app for brand work. It shows a brand's notes from your Markdow
 
 ## Status
 
-Design stage: nothing is built yet. The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
+Design stage: the code that reads and writes a Moodboard's blocks exists and is tested (`board/moodboard.py`, `board/vault_io.py`); there is no server and no page yet. The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
 
 ## What it will do
 
@@ -22,7 +22,7 @@ It writes in two places only, both inside the vault you point it at:
 - Image files and thumbnails under `Board/<brand>/`.
 - Blocks it created, at the end of `Brands/<brand>/<brand> - Moodboard.md`.
 
-It never edits another note and never touches a block it did not write. The exact layout and block format are in [`docs/reference/VAULT_LAYOUT.md`](docs/reference/VAULT_LAYOUT.md).
+It never edits another note and never edits a block. Deleting an item removes only the block you click delete on, and only if its text is unchanged since the page showed it; that includes a block you wrote by hand, because the format cannot tell who wrote a block. The exact layout and block format are in [`docs/reference/VAULT_LAYOUT.md`](docs/reference/VAULT_LAYOUT.md).
 
 **Back up your vault, and the `Board/` folder, before first use.** `Board/` is meant to be kept out of git, so nothing else holds a copy of your images. The software is provided as is, with no warranty (see the licence).
 

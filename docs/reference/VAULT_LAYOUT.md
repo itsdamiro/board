@@ -40,13 +40,13 @@ A quiet layout with a lot of space around the heading.
 A color combination to try for the footer.
 ```
 
-A reader takes a first line that starts with `![[` as the image, a last line that matches `[source](…)` as the link, and everything between as the description. The second block above has no image and no address.
+A reader takes a first line that starts with `![[` as the image, a last line that matches `[source](…)` as the link, and everything between as the description. The second block above has no image and no address. The frontmatter is skipped. A heading (a line starting with `#` and a space) and the lines under it, up to the next blank line, are not an item, so leave a blank line after a heading. A `[source](...)` line whose address is not http or https stays part of the description.
 
 ## What the app may write
 
-- It appends a block at the end of a Moodboard note and writes files under `Board/<slug>/`.
-- It never rewrites a block it did not write, and never edits any other note. If you edit a block by hand, it is shown as it stands.
-- Deleting an item in the app removes its block and its files together, and nothing else.
+- It appends a block at the end of a Moodboard note and writes files under `Board/<slug>/`. To delete a block it rewrites the note through a hidden temporary file (`.board-<random>.tmp`) in the same folder, renamed over the note, or removed if anything fails.
+- It never edits a block and never edits any other note. If you edit a block by hand, it is shown as it stands.
+- Deleting an item in the app removes its block and the image files its embed names, and nothing else. It does so only when you click delete on that block, and only if the block's text is unchanged since the page showed it. This applies to a block you wrote by hand as well, since the format has no marker for who wrote a block.
 - The description is the text you typed; the app writes no text of its own into a note.
 
 ## Privacy note for client work
