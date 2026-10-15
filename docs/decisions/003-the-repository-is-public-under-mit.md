@@ -54,3 +54,7 @@ Open:
 - **No licence, or a "source available" statement.** Lets people read but not use, against the aim. Would be right if the owner wanted to share the design without the code being reused.
 - **Public documents only in the README.** Less to keep true, but the vault format and the safety promises are long enough to bury it, and the format is a contract. Would be right if the layout were a single sentence.
 - **Pointing users to workflow ADR 018 for the format.** No copy to drift. But a stranger should not have to read a decision record in another repository to run the app. Would be right if the format moved into its own public specification.
+
+## Amendment (2026-10-15): the first push came before the gate
+
+Decision 3 says the private-terms check is a gate added before the first push. The first push happened the same day, on the owner's instruction, before the gate was written. The assistant scanned the whole history by hand first, for home-directory paths, the vault's name and attribution trailers, and found only rule text that names them. The decision is unchanged: the gate is still due, it is the next piece of work, and any later push goes through it. Until it exists, a push needs the same manual scan.
