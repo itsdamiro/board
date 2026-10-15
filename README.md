@@ -28,7 +28,7 @@ It never edits another note and never edits a block. Deleting an item removes on
 
 ## Requirements (planned)
 
-- Python 3 (the server and the vault code), with [Pillow](https://python-pillow.org/) for thumbnails.
+- Python 3.11 or newer (the server and the vault code), with [Pillow](https://python-pillow.org/) for thumbnails.
 - Node and npm, to build the page (React, TypeScript, Vite, Tailwind). Not needed to run a copy that is already built.
 - A vault that follows the layout above. The vault path is given as an argument or an environment variable; it is never stored in the code.
 
