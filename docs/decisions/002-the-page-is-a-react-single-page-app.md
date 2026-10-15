@@ -117,3 +117,30 @@ The owner asked for these in chat on 2026-10-16, after trying the cards. They ch
 
 
 6. **The plus and minus buttons move to the header**, just before the theme toggle. They keep their pill (a border, the card background and a shadow, with the count between the buttons) but it sits in the row instead of floating in the corner, and the theme toggle is dressed to match: a round button with the same border, background and shadow, the same height as the pill. This replaces decision 7 of the amendment on the cards only in where the pill is; the page loses its extra bottom padding with it. The pill is shown only when there is a choice (not on a phone) and the brand has cards.
+
+## Amendment (2026-10-16): a delete button on the cards
+
+The owner asked for this in chat on 2026-10-16: "a delete button on the cards which is only available once the cursor is over the card". It replaces decision 8 of the first record ("Delete is not in this slice"); the server side has had delete since ADR 001's amendment of 2026-10-15.
+
+1. **An item's card has a round icon button** (the trash of `lucide-react`) in its top right corner, named "Delete <the item's words>". It is invisible until the pointer is over the card, and also shows when it has the keyboard's focus, so it stays reachable without a pointer. The hub and note cards have none; they are not items.
+2. **A click asks first.** A dialog (the viewer's shadcn `Dialog`) says "Delete this item?", shows the item's words, and says it is removed from the Moodboard note with its image files and cannot be undone. Cancel, Escape and a click on the backdrop close it and remove nothing. The dialog is the confirmation ADR 001's "explicit click" and the earlier "delete confirmation to come" ask for; no new dependency.
+3. **Confirming sends `DELETE /api/brands/<slug>/items/<key>`** and then asks the API for the brand again, as after an add. A refusal (the block changed since it was shown, or its image files could not be removed) is shown in the dialog in the server's words and the item stays.
+4. **A known cost, taken knowingly:** a touch screen has no hover, so on a phone or a tablet used by touch there is no way to delete from the page. The owner asked for hover only.
+5. **Workflow ADR 018's matching amendment** (decision 6 lists only appending) is still the owner's to approve; this change ships the control, not that approval.
+
+## Amendment (2026-10-16): shift-click picks several cards to delete
+
+The owner asked in chat on 2026-10-16: "can we do a shift press to select multiple items to delete?". It extends the amendment above on the delete button; the rest of it stands.
+
+1. **A click with Shift held on an item card picks it, or lets it go if it was picked.** The click does nothing else: a shift-click on a picture does not open the viewer. A picked card has a ring and a check mark on its left corner. Every item card can be picked; the hub and note cards cannot. It is caught on the cards list in the capture phase, so a click in the confirmation dialog, which is outside the list, is left alone, and pressing the mouse with Shift held does not select text.
+2. **A bar appears at the bottom of the window while anything is picked**, saying how many ("3 selected"), with "Delete 3" and "Clear". Escape also clears the picks. Choosing another brand drops them, as the cards go; a picked card that is gone after a reload is dropped from the count.
+3. **"Delete 3" asks once,** with the same dialog, titled "Delete 3 items?" and listing their words, then deletes the items one after the other with the same `DELETE` calls as a single delete (two writes to one note at once would only meet the server's 409). If the server refuses one, the dialog says how many went ("1 of 3 deleted") and the server's words; the page shows what is left, and the rest stay picked so that they can be tried again or cleared. The card's own trash button still deletes only its own item.
+4. **A known cost, taken knowingly:** picking is by a shift-click, so there is no way to pick by keyboard alone and none by touch. The keyboard can still delete one item at a time by the card's button. Picking a range (shift-click from one card to another) is not built: the cards read down columns, so "between" would be unclear.
+
+## Amendment (2026-10-16): keys for the column buttons
+
+The owner asked in chat on 2026-10-16: "lets also put a key press shortcut to +/- buttons". It adds to decision 7 of the amendment on the cards.
+
+1. **The keys `+` and `-` press the plus and minus buttons from anywhere on the page.** `=` and `_`, the same keys without Shift, do the same, so a keyboard where `+` needs Shift works with one key. The key does nothing past the ends of the range, as the disabled button does nothing, and it exists only where the pill does (not on a phone, not with no cards).
+2. **Not while typing, and not as the browser's zoom.** A key typed into a field (the description, the address), a select or an editable element is the text's. With Ctrl, Cmd or Alt held, `+` and `-` stay the browser's zoom and the page does not take them.
+3. **The buttons say so:** each has a tooltip ("More columns (+)") and `aria-keyshortcuts`. Their accessible names are unchanged.

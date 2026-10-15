@@ -5,9 +5,8 @@ import { expect, test, type Board } from "./fixtures";
 import { watchProblems } from "./problems";
 
 // The milestone (ADR 006, decision 5): pick a brand, paste a screenshot, describe it, press Enter, and the item shows in
-// the grid and is the last block of the brand's Moodboard, with its image files on disk. In light by the browser's own
-// setting and in dark by the page's toggle. Delete is not here: it ships with the workflow ADR 018 amendment (ADR 002,
-// amendment on the screens). The paste and the drop are simulated in the page with a generated image, because the system
+// the grid and is the last block of the brand's Moodboard, with its image files on disk, and a delete takes it away again.
+// In light by the browser's own setting and in dark by the page's toggle. The paste and the drop are simulated in the page with a generated image, because the system
 // clipboard is not reliable in a headless browser (ADR 006, decision 6).
 
 const BRAND = "sample-one";
@@ -123,6 +122,63 @@ for (const scheme of ["light", "dark"] as const) {
       await page.keyboard.press("Escape");
       await expect(viewer).toHaveCount(0);
 
+      expect(problems).toEqual([]);
+    });
+
+    test("the delete button shows only over the card, asks first, and removes the block and its image files", async ({ page, board }) => {
+      const problems = watchProblems(page);
+      const before = moodboard(board);
+      await dispatchImage(page, "paste");
+      await page.getByLabel("Description").fill("to delete");
+      await page.getByLabel("Description").press("Enter");
+      await expect(page.getByRole("img", { name: "to delete" })).toBeVisible();
+      expect(boardFiles(board)).toHaveLength(2);
+
+      const remove = page.getByRole("button", { name: "Delete to delete" });
+      await expect(remove).toHaveCSS("opacity", "0"); // pointer away from the card
+      await page.getByRole("img", { name: "to delete" }).hover();
+      await expect(remove).toHaveCSS("opacity", "1");
+
+      await remove.click();
+      const dialog = page.getByRole("dialog", { name: "Delete this item?" });
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(moodboard(board)).toContain("to delete");
+
+      await page.getByRole("img", { name: "to delete" }).hover();
+      await remove.click();
+      await dialog.getByRole("button", { name: "Delete" }).click();
+      await expect(page.getByRole("img", { name: "to delete" })).toHaveCount(0);
+      expect(moodboard(board)).not.toContain("to delete");
+      expect(moodboard(board).trimEnd()).toBe(before.trimEnd());
+      expect(boardFiles(board)).toEqual([]);
+      expect(problems).toEqual([]);
+    });
+
+    test("shift-click picks several cards, and one confirmation deletes them all", async ({ page, board }) => {
+      const problems = watchProblems(page);
+      for (const words of ["one", "two", "three"]) {
+        await dispatchImage(page, "paste");
+        await page.getByLabel("Description").fill(words);
+        await page.getByLabel("Description").press("Enter");
+        await expect(page.getByRole("img", { name: words })).toBeVisible();
+      }
+      expect(boardFiles(board)).toHaveLength(6);
+
+      await page.getByRole("img", { name: "one" }).click({ modifiers: ["Shift"] });
+      await page.getByRole("img", { name: "three" }).click({ modifiers: ["Shift"] });
+      await expect(page.getByRole("dialog")).toHaveCount(0); // the picture did not open the viewer
+      await expect(page.getByRole("status", { name: "Selection" })).toContainText("2 selected");
+      await page.getByRole("button", { name: "Delete 2" }).click();
+      await page.getByRole("dialog", { name: "Delete 2 items?" }).getByRole("button", { name: "Delete" }).click();
+
+      await expect(page.getByRole("img", { name: "one" })).toHaveCount(0);
+      await expect(page.getByRole("img", { name: "three" })).toHaveCount(0);
+      await expect(page.getByRole("img", { name: "two" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Selection" })).toHaveCount(0);
+      expect(moodboard(board)).toContain("two");
+      expect(moodboard(board)).not.toMatch(/\bone\b|\bthree\b/);
+      expect(boardFiles(board)).toHaveLength(2);
       expect(problems).toEqual([]);
     });
 

@@ -109,7 +109,7 @@ export default function App() {
                 {brand.moodboard.problem}
               </p>
             )}
-            <Cards columns={columns} brand={brand} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
+            <Cards columns={columns} brand={brand} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
           </>
         )}
       </main>

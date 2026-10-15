@@ -30,7 +30,7 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-/** Installs the fake as `fetch` and returns the brands (change them between steps) and every call made. `refuse` answers an add. */
+/** Installs the fake as `fetch` and returns the brands (change them between steps) and every call made. `refuse` answers an add or a delete. */
 export function installServer(brands: Brand[], refuse?: { status: number; error: string }) {
   const calls: Call[] = [];
   const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -39,9 +39,18 @@ export function installServer(brands: Brand[], refuse?: { status: number; error:
     const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : null;
     calls.push({ method, path, body });
     if (method === "GET" && path === "/api/brands") return json(200, { brands: brands.map((b) => b.slug).sort() });
-    const found = /^\/api\/brands\/([^/]+)(\/items)?$/.exec(path);
+    const found = /^\/api\/brands\/([^/]+)(\/items)?(?:\/([^/]+))?$/.exec(path);
     const brand = brands.find((b) => b.slug === decodeURIComponent(found?.[1] ?? ""));
     if (found === null || brand === undefined) return json(404, { error: "no such brand" });
+    if (method === "DELETE" && found[2] !== undefined && found[3] !== undefined) {
+      if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
+      const key = decodeURIComponent(found[3]);
+      const at = brand.moodboard.items.findIndex((i) => i.key === key);
+      if (at < 0) return json(409, { error: "the item changed since it was shown" });
+      brand.moodboard.items.splice(at, 1);
+      return json(200, { deleted: key });
+    }
+    if (found[3] !== undefined) return json(404, { error: "no such route" });
     if (method === "GET" && found[2] === undefined) return json(200, brand);
     if (method === "POST" && found[2] !== undefined) {
       if (refuse !== undefined) return json(refuse.status, { error: refuse.error });

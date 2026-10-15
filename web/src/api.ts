@@ -84,6 +84,11 @@ export function toBase64(file: Blob): Promise<string> {
   });
 }
 
+/** Removes the item whose `key` the brand view gave; the server refuses it (409) if the block changed since it was shown. */
+export async function deleteItem(slug: string, key: string): Promise<void> {
+  await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}`, { method: "DELETE" });
+}
+
 export async function addItem(slug: string, item: NewItem): Promise<Item> {
   const image = item.image === null ? null : await toBase64(item.image);
   const init = {

@@ -370,6 +370,144 @@ describe("the cards", () => {
     });
   });
 
+  describe("deleting an item", () => {
+    const two = (refuse?: { status: number; error: string }) =>
+      installServer(
+        [brandView("alpha", {}, [item({ key: "a", description: "first", date: "2026-10-02" }), item({ key: "b", description: "second", date: "2026-10-01" })])],
+        refuse,
+      );
+
+    it("has a delete button on each item's card, hidden until the pointer is over the card, but never on the other cards", async () => {
+      two();
+      render(<App />);
+      await shown("alpha");
+      const button = screen.getByRole("button", { name: "Delete first" });
+      expect(button.className).toContain("opacity-0");
+      expect(button.className).toContain("group-hover:opacity-100");
+      expect(button.className).toContain("focus-visible:opacity-100"); // the keyboard reaches it too
+      expect(button.closest("li")!.className).toContain("group");
+      expect(screen.getAllByRole("button", { name: /^Delete / })).toHaveLength(2);
+    });
+
+    it("asks first, and removes nothing when cancelled", async () => {
+      const { calls } = two();
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "Delete first" }));
+      const dialog = await screen.findByRole("dialog", { name: "Delete this item?" });
+      expect(within(dialog).getByText("first")).toBeTruthy();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+      expect(screen.getByText("first")).toBeTruthy();
+    });
+
+    it("deletes the item by its key when confirmed, then shows the brand again without it", async () => {
+      const { calls } = two();
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "Delete first" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
+      await waitFor(() => expect(screen.queryByText("first")).toBeNull());
+      expect(calls.filter((call) => call.method === "DELETE").map((call) => call.path)).toEqual(["/api/brands/alpha/items/a"]);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByText("second")).toBeTruthy();
+    });
+
+    describe("with shift-click", () => {
+      const three = (refuse?: { status: number; error: string }) =>
+        installServer(
+          [
+            brandView("alpha", {}, [
+              item({ key: "a", description: "first", image: "/img/a.png", thumb: "/t/a.png", date: "2026-10-03" }),
+              item({ key: "b", description: "second", date: "2026-10-02" }),
+              item({ key: "c", description: "third", date: "2026-10-01" }),
+            ]),
+          ],
+          refuse,
+        );
+      const shiftClick = (element: Element) => fireEvent.click(element, { shiftKey: true });
+      const card = (words: string) => screen.getByText(words, { selector: "li p" }).closest("li")!;
+
+      it("picks cards, counts them, and does not open the viewer", async () => {
+        three();
+        render(<App />);
+        await shown("alpha");
+        expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+        shiftClick(screen.getByRole("button", { name: "View first" }));
+        expect(screen.queryByRole("dialog")).toBeNull();
+        shiftClick(card("second"));
+        expect(screen.getByRole("status", { name: "Selection" }).textContent).toContain("2 selected");
+        shiftClick(card("second")); // a second shift-click lets it go
+        expect(screen.getByRole("status", { name: "Selection" }).textContent).toContain("1 selected");
+        fireEvent.click(screen.getByRole("button", { name: "View first" })); // a plain click is still the viewer
+        expect(await screen.findByRole("dialog")).toBeTruthy();
+      });
+
+      it("deletes all the picked cards after one question, one after the other", async () => {
+        const { calls } = three();
+        render(<App />);
+        await shown("alpha");
+        shiftClick(card("first"));
+        shiftClick(card("third"));
+        fireEvent.click(screen.getByRole("button", { name: "Delete 2" }));
+        const dialog = await screen.findByRole("dialog", { name: "Delete 2 items?" });
+        expect(within(dialog).getByText("first")).toBeTruthy();
+        expect(within(dialog).getByText("third")).toBeTruthy();
+        shiftClick(within(dialog).getByRole("button", { name: "Delete" })); // inside the dialog a shift-click picks nothing
+        await waitFor(() => expect(screen.queryByText("third")).toBeNull());
+        expect(calls.filter((call) => call.method === "DELETE").map((call) => call.path)).toEqual(["/api/brands/alpha/items/a", "/api/brands/alpha/items/c"]);
+        expect(screen.getByText("second")).toBeTruthy();
+        expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+
+      it("clears the picks with Clear or Escape and deletes nothing", async () => {
+        const { calls } = three();
+        render(<App />);
+        await shown("alpha");
+        shiftClick(card("second"));
+        fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+        expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+        shiftClick(card("second"));
+        fireEvent.keyDown(document, { key: "Escape" });
+        expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+        expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+      });
+
+      it("says how far it got when the server refuses, and keeps what was not deleted", async () => {
+        three();
+        render(<App />);
+        await shown("alpha");
+        shiftClick(card("first"));
+        shiftClick(card("second"));
+        fireEvent.click(screen.getByRole("button", { name: "Delete 2" }));
+        const dialog = await screen.findByRole("dialog", { name: "Delete 2 items?" });
+        // the second is changed behind the page's back, so the server answers 409 for it, and what is left is read again
+        vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const delete409 = init?.method === "DELETE" && String(input).endsWith("/b");
+          if (delete409) return new Response(JSON.stringify({ error: "The item changed since it was shown." }), { status: 409, headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify(init?.method === "DELETE" ? { deleted: "a" } : brandView("alpha", {}, [item({ key: "b", description: "second", date: "2026-10-02" }), item({ key: "c", description: "third", date: "2026-10-01" })])), { status: 200, headers: { "Content-Type": "application/json" } });
+        }));
+        fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+        expect((await within(dialog).findByRole("alert")).textContent).toContain("1 of 2 deleted. The item changed since it was shown.");
+        await waitFor(() => expect(screen.queryByText("first", { selector: "li p" })).toBeNull()); // what went is gone from the page
+        expect(screen.getByText("second", { selector: "li p" })).toBeTruthy();
+      });
+    });
+
+    it("shows the server's refusal and keeps the item", async () => {
+      two({ status: 409, error: "The item changed since it was shown." });
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "Delete first" }));
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+      expect((await within(dialog).findByRole("alert")).textContent).toContain("changed since it was shown");
+      expect(screen.getByText("first", { selector: "li p" })).toBeTruthy();
+    });
+  });
+
   it("calls an image with no description Image", async () => {
     installServer([brandView("alpha", {}, [item({ description: "", text: "", image: "/i.png", thumb: "/t.png" })])]);
     render(<App />);
@@ -427,6 +565,31 @@ describe("the cards", () => {
     expect(window.localStorage.getItem(COLUMNS_KEY)).toBe("4");
     fireEvent.click(screen.getByRole("button", { name: "Fewer columns" }));
     expect(columns()).toBe("3");
+  });
+
+  it("changes the columns with the + and - keys, but not while typing, with a modifier, or past the ends", async () => {
+    installServer([brandView("alpha", {}, [item()])]);
+    render(<App />);
+    await shown("alpha");
+    const columns = () => screen.getByRole("status", { name: "Columns shown" }).textContent;
+    expect(columns()).toBe("3");
+    fireEvent.keyDown(document.body, { key: "+" });
+    expect(columns()).toBe("4");
+    fireEvent.keyDown(document.body, { key: "=" }); // the same key without Shift
+    expect(columns()).toBe("5");
+    fireEvent.keyDown(document.body, { key: "-" });
+    fireEvent.keyDown(document.body, { key: "_" });
+    expect(columns()).toBe("3");
+    fireEvent.keyDown(document.body, { key: "-" }); // three is the least a large screen allows
+    expect(columns()).toBe("3");
+    fireEvent.keyDown(document.body, { key: "+", ctrlKey: true }); // the browser's zoom
+    fireEvent.keyDown(document.body, { key: "+", metaKey: true });
+    expect(columns()).toBe("3");
+    document.dispatchEvent(pasteEvent([png()]));
+    const field = await screen.findByLabelText("Description");
+    fireEvent.keyDown(field, { key: "+" });
+    expect(columns()).toBe("3");
+    expect(screen.getByRole("button", { name: "More columns" }).getAttribute("aria-keyshortcuts")).toBe("+");
   });
 
   it("stops the buttons at three columns and at eight on a large screen", async () => {
