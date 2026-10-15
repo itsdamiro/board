@@ -1,5 +1,5 @@
 // How many columns the cards use: by default as many as the window has room for, or the number the owner set with the
-// slider (ADR 002, amendment on the slider). The set number is remembered in the browser as a convenience: storage can be
+// buttons (ADR 002, amendment of 2026-10-16). The set number is remembered in the browser as a convenience: storage can be
 // missing or throw, and the page works without it, like the theme choice.
 import { safeStorage } from "./theme";
 

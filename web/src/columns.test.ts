@@ -11,7 +11,7 @@ const refusing = {
 };
 
 describe("autoColumns", () => {
-  it("fits as many 18 rem cards as the window has room for, at least one and at most the slider's top", () => {
+  it("fits as many 18 rem cards as the window has room for, at least one and at most the top count", () => {
     expect(autoColumns(375)).toBe(1);
     expect(autoColumns(100)).toBe(1);
     expect(autoColumns(1024)).toBe(3);
@@ -34,7 +34,7 @@ describe("the remembered column count", () => {
     expect(readColumns(storage)).toBe(5);
   });
 
-  it("is nothing for nothing, for rubbish, or for a number the slider cannot make", () => {
+  it("is nothing for nothing, for rubbish, or for a number the buttons cannot make", () => {
     for (const value of [null, "", "abc", "0", "9", "2.5", "-1"]) expect(readColumns({ getItem: () => value })).toBeNull();
     expect(readColumns(undefined)).toBeNull();
   });
