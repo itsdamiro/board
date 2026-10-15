@@ -57,3 +57,7 @@ Open: which browser the owner uses day to day (WebKit would then be added); whet
 ## Amendment (2026-10-15): the e2e gate arrives with the first end-to-end test
 
 Decision 8 said the `e2e` gate is added with the scaffold. The scaffold has no flow to test yet, so a gate then could not fail, and it also needs the server to serve `web/dist/` first. The gate (and the sample-vault script of decision 4) is added with the first end-to-end test, in slice 3b after the server serves the built page. Nothing else in the decision changes.
+
+## Amendment (2026-10-15): the flow stops before delete for now
+
+Decision 5 lists delete as the last step of the flow. Delete is not built: it waits for the matching amendment of workflow ADR 018 ([ADR 002](002-the-page-is-a-react-single-page-app.md), amendment on the screens, item 8). Until it ships the flow ends once the item is shown, the Moodboard file ends with its block and the image files exist; the delete step, and the check that the block and files are gone, are added with delete. Nothing else in the decision changes. The suite also covers a pasted address, dropped images, a refusal from the server and the remembered brand, each in light and in dark where the flow is.
