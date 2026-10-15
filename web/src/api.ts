@@ -10,12 +10,14 @@ export interface Item {
   thumb: string | null;
   width: number | null;
   height: number | null;
+  date: string | null; // `YYYY-MM-DDTHH:MM`, from the image id (docs/reference/API.md)
 }
 
 export interface Panel {
   title: string;
   text: string;
   problem: string | null;
+  date: string | null; // the note's `created`, `YYYY-MM-DD` or with `THH:MM`
 }
 
 export interface Brand {

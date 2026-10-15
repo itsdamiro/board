@@ -6,7 +6,7 @@ import { watchProblems } from "./problems";
 
 // The milestone (ADR 006, decision 5): pick a brand, paste a screenshot, describe it, press Enter, and the item shows in
 // the grid and is the last block of the brand's Moodboard, with its image files on disk. In light by the browser's own
-// setting and in dark by the page's switch. Delete is not here: it ships with the workflow ADR 018 amendment (ADR 002,
+// setting and in dark by the page's toggle. Delete is not here: it ships with the workflow ADR 018 amendment (ADR 002,
 // amendment on the screens). The paste and the drop are simulated in the page with a generated image, because the system
 // clipboard is not reliable in a headless browser (ADR 006, decision 6).
 
@@ -51,6 +51,16 @@ async function pasteText(page: Page, text: string): Promise<void> {
   }, text);
 }
 
+/** The page's title is the brand menu: it shows the brand being looked at. */
+function menu(page: Page) {
+  return page.getByRole("button", { name: /^Brand/ });
+}
+
+async function chooseBrand(page: Page, slug: string): Promise<void> {
+  await menu(page).click();
+  await page.getByRole("menuitemradio", { name: slug }).click();
+}
+
 function moodboard(board: Board, slug = BRAND): string {
   return readFileSync(join(board.vault, "Brands", slug, `${slug} - Moodboard.md`), "utf8");
 }
@@ -66,14 +76,15 @@ for (const scheme of ["light", "dark"] as const) {
     test.beforeEach(async ({ page, board }) => {
       await page.emulateMedia({ colorScheme: "light" });
       await page.goto(board.url);
-      if (scheme === "dark") await page.getByRole("button", { name: "Dark" }).click();
+      if (scheme === "dark") await page.getByRole("button", { name: "Switch to dark mode" }).click();
       await expect(page.locator("html")).toHaveClass(scheme === "dark" ? /dark/ : /^(?!.*dark).*$/);
-      await expect(page.getByRole("heading", { name: BRAND, level: 2 })).toBeVisible();
+      await expect(menu(page)).toContainText(BRAND);
+      await expect(page.getByRole("form", { name: "Add an item" })).toBeVisible();
     });
 
     test("a pasted screenshot with a description becomes an item and the last block of the Moodboard", async ({ page, board }) => {
       const problems = watchProblems(page);
-      await expect(page.getByText("Nothing here yet")).toBeVisible();
+      await expect(page.getByRole("form", { name: "Add an item" })).toHaveText("paste / drop image here");
 
       await dispatchImage(page, "paste");
       await expect(page.getByRole("img", { name: "Preview of the file to add" })).toBeVisible();
@@ -83,7 +94,7 @@ for (const scheme of ["light", "dark"] as const) {
       const picture = page.getByRole("img", { name: "a quiet layout" });
       await expect(picture).toBeVisible();
       await expect(page.getByRole("img", { name: "Preview of the file to add" })).toHaveCount(0);
-      await expect(page.getByLabel("Description")).toHaveValue("");
+      await expect(page.getByLabel("Description")).toHaveCount(0); // back to the empty box
       await expect(picture).toHaveJSProperty("naturalWidth", WIDTH); // the thumbnail has loaded, not only been placed
       const shape = await picture.evaluate((img: HTMLImageElement) => ({
         loaded: img.naturalWidth,
@@ -117,26 +128,28 @@ for (const scheme of ["light", "dark"] as const) {
       await dispatchImage(page, "drop");
       await expect(page.getByRole("img", { name: "Preview of the file to add" })).toBeVisible();
       await page.getByLabel("Description").fill("a footer");
-      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByLabel("Description").press("Enter");
 
       await expect(page.getByRole("link", { name: "https://example.com/inspiration" })).toBeVisible();
       expect(moodboard(board)).toMatch(/\n!\[\[[0-9a-z-]+\.png\]\]\na footer\n\[source\]\(https:\/\/example\.com\/inspiration\)\n$/);
       expect(problems).toEqual([]);
     });
 
-    test("an item with only a description is added, and a refusal from the server is shown", async ({ page, board }) => {
+    test("a refusal from the server is shown, and the same image can be sent again with other words", async ({ page, board }) => {
       const problems = watchProblems(page);
-      await page.getByLabel("Description").fill("# a heading is not an item");
+      await dispatchImage(page, "paste");
+      await page.getByLabel("Description").fill("x".repeat(4001)); // longer than a line a person types: the server refuses it
       await page.getByLabel("Description").press("Enter");
-      await expect(page.getByRole("alert")).toContainText("would not be read back");
-      expect(moodboard(board)).not.toContain("heading");
+      await expect(page.getByRole("alert")).toContainText("too long");
+      expect(moodboard(board)).not.toContain("xxxx");
+      expect(boardFiles(board)).toEqual([]);
 
       await page.getByLabel("Description").fill("just words");
       await page.getByLabel("Description").press("Enter");
       await expect(page.getByText("just words")).toBeVisible();
       await expect(page.getByRole("alert")).toHaveCount(0);
       expect(moodboard(board)).toMatch(/\njust words\n$/);
-      expect(boardFiles(board)).toEqual([]);
+      expect(boardFiles(board)).toHaveLength(2);
       // The one refusal above is the 422: the browser reports it twice, as a response and as a console line.
       expect(problems.filter((problem) => !problem.startsWith("422:") && !problem.includes("status of 422"))).toEqual([]);
     });
@@ -146,11 +159,12 @@ for (const scheme of ["light", "dark"] as const) {
       await expect(page.getByText("Image 1 of 2")).toBeVisible();
       await page.getByLabel("Description").fill("first");
       await page.getByLabel("Description").press("Enter");
-      await expect(page.getByText("One image ready")).toBeVisible();
+      await expect(page.getByText("Image 1 of 2")).toHaveCount(0);
+      await expect(page.getByRole("img", { name: "Preview of the file to add" })).toBeVisible();
       await page.getByLabel("Description").fill("second");
       await page.getByLabel("Description").press("Enter");
       await expect(page.getByRole("img", { name: "second" })).toBeVisible();
-      const names = await page.getByRole("list", { name: "Moodboard items" }).getByRole("img").evaluateAll((images) => images.map((i) => i.getAttribute("alt")));
+      const names = await page.getByRole("list", { name: "Cards" }).getByRole("img").evaluateAll((images) => images.map((i) => i.getAttribute("alt")));
       expect(names).toEqual(["second", "first"]);
       expect(boardFiles(board)).toHaveLength(4);
     });
@@ -158,22 +172,25 @@ for (const scheme of ["light", "dark"] as const) {
 }
 
 test("the chosen brand is remembered, and each brand shows its own items", async ({ page, board }) => {
+  const problems = watchProblems(page); // opening the menu must not break the Content-Security-Policy
   await page.goto(board.url);
+  await dispatchImage(page, "paste");
   await page.getByLabel("Description").fill("in one");
   await page.getByLabel("Description").press("Enter");
   await expect(page.getByText("in one")).toBeVisible();
 
-  await page.getByRole("button", { name: "sample-two" }).click();
-  await expect(page.getByRole("heading", { name: "sample-two", level: 2 })).toBeVisible();
+  await chooseBrand(page, "sample-two");
+  await expect(menu(page)).toContainText("sample-two");
   await expect(page.getByText("in one")).toHaveCount(0);
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "sample-two", level: 2 })).toBeVisible();
-  await page.getByRole("button", { name: "sample-one" }).click();
+  await expect(menu(page)).toContainText("sample-two");
+  await chooseBrand(page, "sample-one");
   await expect(page.getByText("in one")).toBeVisible();
+  expect(problems).toEqual([]);
 });
 
-test("the brand's summary comes from its hub note", async ({ page, board }) => {
+test("the brand's summary is the first card, from its hub note", async ({ page, board }) => {
   await page.goto(board.url);
-  await expect(page.getByText("A made-up brand called sample-one.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "About this brand" })).toContainText("A made-up brand called sample-one.");
 });

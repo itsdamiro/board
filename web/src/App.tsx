@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { getBrand, listBrands, type Brand } from "./api";
-import BrandList from "./BrandList";
+import BrandSelect from "./BrandSelect";
+import Cards from "./Cards";
 import Composer from "./Composer";
-import Grid from "./Grid";
 import { readLastBrand, writeLastBrand } from "./lastBrand";
-import Notes from "./Notes";
-import ThemeSwitch from "./ThemeSwitch";
+import ThemeToggle from "./ThemeToggle";
 
 function message(failure: unknown): string {
   return failure instanceof Error ? failure.message : "Something went wrong.";
@@ -64,10 +63,7 @@ export default function App() {
   const refresh = () => setReload((n) => n + 1);
 
   function choose(next: string) {
-    if (next === slug) {
-      if (brand === null) refresh(); // the brand did not load: asking again is how to retry
-      return;
-    }
+    if (next === slug) return;
     setBrand(null);
     setError(null);
     setSlug(next);
@@ -76,50 +72,37 @@ export default function App() {
 
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-8 p-6 md:grid-cols-[14rem_1fr]">
-      <aside className="flex flex-col gap-6">
-        <h1 className="text-3xl">Board</h1>
-        <ThemeSwitch />
-        {brands !== null && <BrandList brands={brands} current={slug} onChoose={choose} />}
-      </aside>
+    <div className="flex flex-col gap-6 p-6 pb-20">
+      <header className="flex items-center justify-between gap-4">
+        <h1>
+          {brands !== null && brands.length > 0 ? <BrandSelect brands={brands} current={slug} onChoose={choose} /> : <span className="px-2 text-3xl">Board</span>}
+        </h1>
+        <ThemeToggle />
+      </header>
       <main className="flex min-w-0 flex-col gap-6">
         {error !== null && (
-          <p role="alert" className="text-destructive">
+          <p role="alert" className="flex flex-wrap items-center gap-3 text-destructive">
             {error}
+            {slug !== null && brand === null && (
+              <button type="button" onClick={refresh} className="text-foreground underline focus-visible:outline-2 focus-visible:outline-ring">
+                Try again
+              </button>
+            )}
           </p>
         )}
         {brands !== null && brands.length === 0 && <p className="text-muted-foreground">The vault has no brands under Brands/.</p>}
         {slug !== null && brand === null && error === null && <p className="text-muted-foreground">Loading…</p>}
         {brand !== null && (
           <>
-            <header className="flex flex-col gap-2">
-              <h2 className="text-2xl">{brand.slug}</h2>
-              {(brand.status !== null || brand.client !== null) && (
-                <p className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  {brand.status !== null && <span className="rounded-md border border-border px-2 py-0.5">{brand.status}</span>}
-                  {brand.client !== null && <span className="rounded-md border border-border px-2 py-0.5">{brand.client}</span>}
-                </p>
-              )}
-              {brand.summary !== "" && <p className="text-sm">{brand.summary}</p>}
-            </header>
-            <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-              <section aria-label="Moodboard" className="flex min-w-0 flex-col gap-6">
-                {brand.moodboard.exists ? (
-                  <Composer slug={brand.slug} onAdded={refresh} />
-                ) : (
-                  <p className="text-muted-foreground">This brand has no Moodboard note. Create one in the vault and the board will add to it.</p>
-                )}
-                {brand.moodboard.problem !== null && (
-                  <p role="alert" className="text-destructive">
-                    {brand.moodboard.problem}
-                  </p>
-                )}
-                <Grid items={brand.moodboard.items} />
-              </section>
-              <section aria-label="Notes">
-                <Notes brand={brand} />
-              </section>
-            </div>
+            {!brand.moodboard.exists && (
+              <p className="text-muted-foreground">This brand has no Moodboard note. Create one in the vault and the board will add to it.</p>
+            )}
+            {brand.moodboard.problem !== null && (
+              <p role="alert" className="text-destructive">
+                {brand.moodboard.problem}
+              </p>
+            )}
+            <Cards brand={brand} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
           </>
         )}
       </main>

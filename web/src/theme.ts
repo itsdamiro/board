@@ -34,6 +34,10 @@ export function resolve(choice: Choice, systemPrefersDark: boolean): Resolved {
   return choice;
 }
 
+export function flip(shown: Resolved): Resolved {
+  return shown === "dark" ? "light" : "dark";
+}
+
 export function applyTheme(root: HTMLElement, resolved: Resolved): void {
   root.classList.toggle("dark", resolved === "dark");
   root.style.colorScheme = resolved;

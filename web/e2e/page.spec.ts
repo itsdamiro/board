@@ -10,8 +10,8 @@ for (const scheme of ["light", "dark"] as const) {
     const problems = watchProblems(page);
 
     await page.goto(board.url);
-    await expect(page.getByRole("heading", { name: "Board" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "System" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: /^Brand/ })).toContainText("sample-one");
+    await expect(page.getByRole("button", { name: scheme === "dark" ? "Switch to light mode" : "Switch to dark mode" })).toBeVisible();
     await expect(page.locator("html")).toHaveClass(scheme === "dark" ? /dark/ : /^(?!.*dark).*$/);
 
     const brands = await page.evaluate(async () => (await fetch("/api/brands")).json());
@@ -23,11 +23,11 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
-test("the theme switch overrides the browser's setting", async ({ page, board }) => {
+test("the theme toggle overrides the browser's setting", async ({ page, board }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto(board.url);
-  await page.getByRole("button", { name: "Dark" }).click();
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await page.getByRole("button", { name: "Light" }).click();
+  await page.getByRole("button", { name: "Switch to light mode" }).click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 });

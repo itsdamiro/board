@@ -43,6 +43,21 @@
 - **Cause:** the suite builds nothing (ADR 006, decision 3); it serves whatever `web/dist/` holds. `scripts/gates` runs `web-build` before `e2e`, but `npm run e2e` alone does not. It also needs Chromium (`npx playwright install chromium` in `web/`, with the owner's go-ahead) and `.venv` for the server.
 - **Do this:** run `npm run build` first, or `scripts/gates web-build e2e`. The suite stops with a message if `web/dist/index.html` or `.venv` is missing.
 
+### A Radix Select or a modal menu writes a style element, which the policy refuses
+- **Symptom:** opening a shadcn `Select` logs "Applying inline style violates the following Content Security Policy directive" twice in the console, though the page looks right in `npm run dev`.
+- **Cause:** Radix's Select writes a `<style>` element for its viewport, and its modal mode (and the modal menu's) another to lock the page's scroll; the server's policy has no `style-src`, so `default-src 'self'` blocks both.
+- **Do this:** use `DropdownMenu` with `modal={false}` (`web/src/components/ui/dropdown-menu.tsx`), and open each new Radix component in the built page, with the console open, before trusting it. The e2e test of the brand menu fails on such an error.
+
+### Tailwind 4's `columns-72` is 72 columns, not 18 rem
+- **Symptom:** a card grid made with `columns-72` shows images collapsed to nothing.
+- **Cause:** in Tailwind 4 a number after `columns-` is a column count; only the names (`columns-xs`) and brackets are widths.
+- **Do this:** write the width as `columns-[18rem]`, or set `columns` in a style object, and look at the built CSS (`grep -o 'columns:[^;}]*' web/dist/assets/*.css`).
+
+### On macOS `Cards.tsx` and `cards.ts` are one file name to TypeScript
+- **Symptom:** `tsc` reports "Already included file name ... differs only in casing" and the default export is missing.
+- **Cause:** the disk is case-insensitive, so an import of `./Cards` can resolve to either file.
+- **Do this:** never give a component and a module the same name apart from case; this repository calls the module `cardOrder.ts`.
+
 ## 2. Recipes
 
 None yet.
