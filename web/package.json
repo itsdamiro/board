@@ -11,7 +11,8 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "oxlint --deny-warnings src public vite.config.ts vite.proxy.ts vite.proxy.test.ts",
+    "e2e": "playwright test",
+    "lint": "oxlint --deny-warnings src public vite.config.ts vite.proxy.ts vite.proxy.test.ts e2e playwright.config.ts",
     "lint:probe": "node lint-probe/check.mjs"
   },
   "dependencies": {

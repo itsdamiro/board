@@ -38,6 +38,11 @@
 - **Cause:** the dev server sends no policy, and the Python server's is `default-src 'self'; img-src 'self' blob:` (ADR 002, decision 6): no inline script, no inline style attribute, no `data:` URI. Vite inlines small assets as `data:` by default (fonts included), and an inline `<script>` for the theme would be refused.
 - **Do this:** keep `build.assetsInlineLimit: 0` in `web/vite.config.ts`, keep the theme script a file (`web/public/theme-init.js`), and set styles with classes or the style object in script, not a `style=` attribute in markup. Check a built page against the policy: run the real server (`python -m board --vault <a synthetic vault>`), open its address and read the console, which reports each violation as an error.
 
+### The end-to-end gate tests the build that is there, not the source
+- **Symptom:** `npm run e2e` passes or fails on a page that does not match the source you just edited.
+- **Cause:** the suite builds nothing (ADR 006, decision 3); it serves whatever `web/dist/` holds. `scripts/gates` runs `web-build` before `e2e`, but `npm run e2e` alone does not. It also needs Chromium (`npx playwright install chromium` in `web/`, with the owner's go-ahead) and `.venv` for the server.
+- **Do this:** run `npm run build` first, or `scripts/gates web-build e2e`. The suite stops with a message if `web/dist/index.html` or `.venv` is missing.
+
 ## 2. Recipes
 
 None yet.
