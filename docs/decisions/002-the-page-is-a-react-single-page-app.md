@@ -63,3 +63,7 @@ Open:
 - **Tailwind's CDN script, or Google Fonts links.** Load code and fonts from other hosts on every visit, against decision 6, and the CDN script is meant for prototypes. Would be right for a throwaway page.
 - **Committing `web/dist/`.** Runs without Node, but puts generated files in history, which `CLAUDE.md` warns against staging. Would be right if the owner wanted to run the app on a machine without Node.
 - **Fonts as hand-downloaded files in the repository.** No packages, but a manual download and update. Would be right if the three font packages were ever refused as a dependency.
+
+## Amendment (2026-10-15): three open items now decided
+
+The dev server's origin check is decided in [ADR 004](004-the-dev-server-reaches-the-api-through-a-checking-proxy.md), the Node version in [ADR 005](005-node-24-is-the-pinned-node-version.md) (Node 24), and end-to-end tests in [ADR 006](006-playwright-tests-the-milestone-flow-against-a-sample-vault.md) (Playwright). The split of slice 3 was done as recommended. Still open: whether a mutation tool covers the page's logic.
