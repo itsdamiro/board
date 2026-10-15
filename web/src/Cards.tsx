@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Minus, Plus } from "lucide-react";
 import { orderCards, type Card } from "./cardOrder";
 import { autoColumns, clampColumns, columnRange, PAGE_PADDING, readColumns, writeColumns, type Range } from "./columns";
+import Viewer from "./Viewer";
 import type { Brand, Item, Panel } from "./api";
 
 // The brand as cards in columns, as many as the stage's width has room for, each card keeping its own proportions
@@ -10,12 +11,12 @@ import type { Brand, Item, Panel } from "./api";
 
 const LINK = "focus-visible:outline-2 focus-visible:outline-ring";
 
-function ItemCard({ item }: { item: Item }) {
+function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) => void }) {
   const words = item.description !== "" ? item.description : item.source === null && item.image === null ? item.text : "";
   return (
     <>
       {item.thumb !== null && item.image !== null && (
-        <a href={item.image} target="_blank" rel="noopener noreferrer" className={`block ${LINK}`}>
+        <button type="button" aria-label={`View ${item.description !== "" ? item.description : "image"}`} onClick={(event) => onView(event.currentTarget)} className={`block w-full cursor-zoom-in ${LINK}`}>
           <img
             src={item.thumb}
             alt={item.description !== "" ? item.description : "Image"}
@@ -24,7 +25,7 @@ function ItemCard({ item }: { item: Item }) {
             loading="lazy"
             className="h-auto w-full"
           />
-        </a>
+        </button>
       )}
       {(words !== "" || item.source !== null) && (
         <div className="flex flex-col gap-1 p-3 text-sm">
@@ -64,10 +65,10 @@ function HubCard({ brand }: { brand: Brand }) {
   );
 }
 
-function Body({ card }: { card: Card }) {
+function Body({ card, onView }: { card: Card; onView: (opener: HTMLElement) => void }) {
   if (card.kind === "hub") return <HubCard brand={card.brand} />;
   if (card.kind === "note") return <NoteCard panel={card.panel} />;
-  return <ItemCard item={card.item} />;
+  return <ItemCard item={card.item} onView={onView} />;
 }
 
 function ColumnButtons({ value, range, onChange }: { value: number; range: Range; onChange: (count: number) => void }) {
@@ -92,6 +93,11 @@ function ColumnButtons({ value, range, onChange }: { value: number; range: Range
 /** `adder` is the box that takes a pasted or dropped image; it is the first card, before the brand's own. */
 export default function Cards({ brand, adder }: { brand: Brand; adder?: ReactNode }) {
   const cards = orderCards(brand);
+  // The viewer steps through the images in the order of the cards, so previous and next are the neighbours the owner sees.
+  const gallery = cards.flatMap((card) => (card.kind === "item" && card.item.image !== null ? [{ key: card.key, item: card.item }] : []));
+  const [viewing, setViewing] = useState<string | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const viewed = gallery.findIndex((entry) => entry.key === viewing);
   const [chosen, setChosen] = useState<number | null>(() => readColumns());
   // The stage is the list's own width, so the count follows the room the cards have, not the window's.
   const [stage, setStage] = useState<HTMLUListElement | null>(null);
@@ -116,10 +122,21 @@ export default function Cards({ brand, adder }: { brand: Brand; adder?: ReactNod
         {adder !== undefined && <li className="mb-4 break-inside-avoid rounded-lg border-2 border-dashed border-border text-card-foreground">{adder}</li>}
         {cards.map((card) => (
           <li key={card.key} className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-border bg-card text-card-foreground">
-            <Body card={card} />
+            <Body card={card} onView={(from) => { opener.current = from; setViewing(card.key); }} />
           </li>
         ))}
       </ul>
+      {viewed >= 0 && (
+        <Viewer
+          images={gallery.map((entry) => entry.item)}
+          index={viewed}
+          onIndex={(next) => setViewing(gallery[next]?.key ?? null)}
+          onClose={() => {
+            setViewing(null);
+            opener.current?.focus();
+          }}
+        />
+      )}
       {cards.length > 0 && choosable && (
         <ColumnButtons
           value={count}

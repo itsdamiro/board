@@ -275,12 +275,99 @@ describe("the cards", () => {
     expect(picture.getAttribute("width")).toBe("640");
     expect(picture.getAttribute("height")).toBe("320");
     expect(picture.getAttribute("loading")).toBe("lazy");
-    const original = within(cards[0]!).getByRole("link", { name: "a quiet layout" });
-    expect(original.getAttribute("href")).toBe("/api/brands/alpha/images/i.png");
-    expect(original.getAttribute("target")).toBe("_blank");
-    expect(original.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(within(cards[0]!).getByRole("button", { name: "View a quiet layout" })).toBeTruthy(); // opens the viewer, not a new tab
+    expect(within(cards[0]!).queryByRole("link", { name: "a quiet layout" })).toBeNull();
     expect(within(cards[0]!).getByRole("link", { name: "https://example.com/p" }).getAttribute("rel")).toBe("noopener noreferrer");
     expect(within(cards[1]!).getByText("a hand-written line")).toBeTruthy();
+  });
+
+  describe("the viewer", () => {
+    const three = () =>
+      installServer([
+        brandView("alpha", {}, [
+          item({ key: "a", description: "first", image: "/img/a.png", thumb: "/t/a.png", date: "2026-10-03", source: "https://example.com/a" }),
+          item({ key: "b", description: "second", image: "/img/b.png", thumb: "/t/b.png", date: "2026-10-02" }),
+          item({ key: "c", description: "third", image: "/img/c.png", thumb: "/t/c.png", date: "2026-10-01" }),
+        ]),
+      ]);
+    const original = () => screen.getByRole("dialog").querySelector("img")!;
+
+    it("opens the original over the page when a thumbnail is clicked, with its words and address", async () => {
+      three();
+      render(<App />);
+      await shown("alpha");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "View second" }));
+      const dialog = await screen.findByRole("dialog", { name: "second" });
+      expect(original().getAttribute("src")).toBe("/img/b.png");
+      expect(within(dialog).getByText("2 of 3")).toBeTruthy();
+    });
+
+    it("shows the address as a link that opens in a new tab", async () => {
+      three();
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "View first" }));
+      const link = within(await screen.findByRole("dialog")).getByRole("link", { name: "https://example.com/a" });
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    });
+
+    it("goes to the next and previous image by the arrows and the keyboard, and stops at the ends", async () => {
+      three();
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "View first" }));
+      const dialog = await screen.findByRole("dialog");
+      const previous = within(dialog).getByRole("button", { name: "Previous image" }) as HTMLButtonElement;
+      const next = within(dialog).getByRole("button", { name: "Next image" }) as HTMLButtonElement;
+      expect(previous.disabled).toBe(true);
+      fireEvent.click(next);
+      expect(original().getAttribute("src")).toBe("/img/b.png");
+      fireEvent.keyDown(dialog, { key: "ArrowRight" });
+      expect(original().getAttribute("src")).toBe("/img/c.png");
+      expect(next.disabled).toBe(true);
+      fireEvent.keyDown(dialog, { key: "ArrowRight" });
+      expect(original().getAttribute("src")).toBe("/img/c.png");
+      fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+      expect(original().getAttribute("src")).toBe("/img/b.png");
+      fireEvent.click(previous);
+      expect(original().getAttribute("src")).toBe("/img/a.png");
+    });
+
+    it("closes by the close button, by Escape and by a click on the backdrop, and gives the focus back", async () => {
+      three();
+      render(<App />);
+      await shown("alpha");
+      for (const close of [
+        () => fireEvent.click(screen.getByRole("button", { name: "Close" })),
+        () => fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" }),
+        () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { hidden: true, name: "" })),
+      ]) {
+        const thumb = screen.getByRole("button", { name: "View first" });
+        fireEvent.click(thumb);
+        await screen.findByRole("dialog");
+        close();
+        await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+        expect(document.activeElement).toBe(thumb);
+      }
+    });
+
+    it("steps through only the images, in the order of the cards", async () => {
+      installServer([
+        brandView("alpha", {}, [
+          item({ key: "a", description: "first", image: "/img/a.png", thumb: "/t/a.png", date: "2026-10-03" }),
+          item({ key: "w", description: "only words", date: "2026-10-02" }),
+          item({ key: "c", description: "third", image: "/img/c.png", thumb: "/t/c.png", date: "2026-10-01" }),
+        ]),
+      ]);
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "View first" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Next image" }));
+      expect(original().getAttribute("src")).toBe("/img/c.png");
+      expect(within(screen.getByRole("dialog")).getByText("2 of 2")).toBeTruthy();
+    });
   });
 
   it("calls an image with no description Image", async () => {
@@ -504,6 +591,41 @@ describe("adding an item", () => {
     expect(screen.getByText("https://example.com/page", { selector: "span" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Remove address" }));
     expect(screen.queryByText("https://example.com/page", { selector: "span" })).toBeNull();
+  });
+
+  it("puts the description field under the picture", async () => {
+    await ready();
+    const field = await withImage();
+    const preview = screen.getByRole("img", { name: "Preview of the file to add" });
+    expect(preview.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("takes an address typed after the link button, with Enter, without adding the item", async () => {
+    const { server } = await ready();
+    const field = await withImage();
+    fireEvent.change(field, { target: { value: "a reference" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add the address of the original" }));
+    const address = screen.getByLabelText("Address of the original");
+    fireEvent.change(address, { target: { value: "https://example.com/original" } });
+    fireEvent.keyDown(address, { key: "Enter" });
+    expect(screen.getByText("https://example.com/original")).toBeTruthy();
+    expect(screen.queryByLabelText("Address of the original")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add the address of the original" })).toBeNull();
+    expect(server.calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    fireEvent.submit(field.closest("form")!);
+    await waitFor(() => expect(server.calls.find((c) => c.method === "POST")?.body).toMatchObject({ description: "a reference", source: "https://example.com/original" }));
+  });
+
+  it("refuses a typed address that is not a web address, and Escape closes the field", async () => {
+    await ready();
+    await withImage();
+    fireEvent.click(screen.getByRole("button", { name: "Add the address of the original" }));
+    const address = screen.getByLabelText("Address of the original");
+    fireEvent.change(address, { target: { value: "not an address" } });
+    fireEvent.keyDown(address, { key: "Enter" });
+    expect((await screen.findByRole("alert")).textContent).toMatch(/not a web address/);
+    fireEvent.keyDown(address, { key: "Escape" });
+    expect(screen.queryByLabelText("Address of the original")).toBeNull();
   });
 
   it("queues several dropped images and adds them one by one", async () => {

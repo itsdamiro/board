@@ -112,11 +112,16 @@ for (const scheme of ["light", "dark"] as const) {
       expect(files.some((name) => name.startsWith("thumbs"))).toBe(true);
       expect(moodboard(board, "sample-two")).not.toContain("quiet");
 
-      // The original opens in a new tab from the picture's link, and it is the image that was pasted.
-      const original = page.getByRole("link", { name: "a quiet layout" });
-      const [tab] = await Promise.all([page.context().waitForEvent("page"), original.click()]);
-      await expect(tab.locator("img")).toBeVisible();
-      await tab.close();
+      // The original opens over the blurred page from the picture, it is the image that was pasted, and Escape closes it. The
+      // console stays clean, which is what shows that the viewer's non-modal dialog writes no style element the policy refuses.
+      await page.getByRole("button", { name: "View a quiet layout" }).click();
+      const viewer = page.getByRole("dialog", { name: "a quiet layout" });
+      await expect(viewer).toBeVisible();
+      await expect(viewer.getByRole("img", { name: "a quiet layout" })).toHaveJSProperty("naturalWidth", WIDTH);
+      await expect(viewer.getByRole("button", { name: "Previous image" })).toBeDisabled();
+      await expect(viewer.getByRole("button", { name: "Next image" })).toBeDisabled(); // the only image of the brand
+      await page.keyboard.press("Escape");
+      await expect(viewer).toHaveCount(0);
 
       expect(problems).toEqual([]);
     });
