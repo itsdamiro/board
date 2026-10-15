@@ -29,6 +29,8 @@ def main() -> int:
     except (OSError, OverflowError) as err:
         print(f"board: cannot listen on 127.0.0.1:{args.port} ({getattr(err, 'strerror', None) or 'not a usable port'})", file=sys.stderr)
         return 2
+    if not os.path.isfile(os.path.join(server.web_dir, "index.html")):
+        print("board: the page is not built yet (run `npm run build` in the web folder); the API works without it", file=sys.stderr)
     with server:
         print(f"board is listening on http://127.0.0.1:{server.server_address[1]}  (Ctrl+C to stop)", flush=True)
         try:

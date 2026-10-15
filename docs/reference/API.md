@@ -2,7 +2,7 @@
 
 > What the page, and later the browser extension, call. The code is `board/server.py` (routes, checks) and `board/items.py` (what each route does); this page is for a client's author. Errors are always `{"error": "<plain text>"}`, with no path in them.
 
-The server listens on `127.0.0.1` only. A request's `Host` must be `127.0.0.1:<port>` or `localhost:<port>`; a request that changes anything (POST, DELETE) must carry an `Origin` of the same address, and a request with any other `Origin` is refused with 403. No CORS header is ever sent. A body is JSON with `Content-Type: application/json` and a `Content-Length`; the limit is about 34 MB (a 25 MB image in base64).
+The server listens on `127.0.0.1` only. Everything outside `/api` that is read (GET, HEAD) is the built page from `web/dist/`: `/` is its `index.html`, and other addresses are its `.html`, `.js`, `.css`, `.woff` and `.woff2` files, never a hidden name, a link out of the folder or a query; any other address there is a 404. The same `Host` and `Origin` checks apply to it. A request's `Host` must be `127.0.0.1:<port>` or `localhost:<port>`; a request that changes anything (POST, DELETE) must carry an `Origin` of the same address, and a request with any other `Origin` is refused with 403. No CORS header is ever sent. A body is JSON with `Content-Type: application/json` and a `Content-Length`; the limit is about 34 MB (a 25 MB image in base64).
 
 | Request | Answer |
 |---|---|

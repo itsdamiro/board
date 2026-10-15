@@ -5,10 +5,12 @@ import io
 import os
 import socket
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
 from board import __main__ as entry
+from board import server
 from tests.helpers import VaultCase
 
 
@@ -43,6 +45,16 @@ class MainTest(VaultCase):
             code, _ = self.run_main("--vault", self.vault, "--port", "0")
         self.assertEqual(code, 0)
         self.assertIn("http://127.0.0.1:", out.getvalue())
+
+    def test_it_says_when_the_page_is_not_built_and_stays_quiet_when_it_is(self):
+        with tempfile.TemporaryDirectory() as web:
+            for built, expect in ((False, True), (True, False)):
+                if built:
+                    with open(os.path.join(web, "index.html"), "w", encoding="utf-8") as f:
+                        f.write("<!doctype html>")
+                with self.subTest(built=built), mock.patch.object(server, "WEB_DIR", web), mock.patch.object(entry.BoardServer, "serve_forever", side_effect=KeyboardInterrupt), contextlib.redirect_stdout(io.StringIO()):
+                    code, err = self.run_main("--vault", self.vault, "--port", "0")
+                    self.assertEqual((code, "not built" in err), (0, expect))
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import base64
 import http.client
 import json
 import os
+import shutil
 import socket
 import threading
 import unittest
@@ -53,7 +54,15 @@ class ServerCase(VaultCase):
         patch = mock.patch.object(server.Handler, "log_error", lambda handler, fmt, *args: self.server_errors.append(fmt % args))
         patch.start()
         self.addCleanup(patch.stop)
-        self.server = server.BoardServer(self.vault, 0)
+        self.web = os.path.join(os.path.dirname(self.vault), "dist")  # a synthetic built page; a file beside it that must never be served
+        os.makedirs(os.path.join(self.web, "assets"))
+        for name, text in (("index.html", "<!doctype html><title>page</title>"), ("theme-init.js", "// theme"), ("assets/app-1a2b.js", "// app"),
+                           ("assets/app-1a2b.css", "body{}"), ("assets/font-9z.woff2", "wOF2"), ("assets/a b.js", "// spaced"), ("assets/data.json", "{}"), (".hidden.js", "// hidden")):
+            with open(os.path.join(self.web, name), "w", encoding="utf-8") as f:
+                f.write(text)
+        with open(os.path.join(os.path.dirname(self.web), "secret.js"), "w", encoding="utf-8") as f:
+            f.write("// secret")
+        self.server = server.BoardServer(self.vault, 0, self.web)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         self.thread.start()
@@ -170,7 +179,7 @@ class ReadTest(ServerCase):
                 self.assertEqual(self.json("GET", f"/api/brands/{slug}")[0], 404)
 
     def test_an_unknown_address_is_404(self):
-        for path in ("/", "/api", "/api/brands/", "/api/brands/alpha/", "/api/brands/alpha/other", "/api/brands?x=1", "/api/brands/alpha?x=1", "/etc/passwd"):
+        for path in ("/api", "/api/", "/api/brands/", "/api/brands/alpha/", "/api/brands/alpha/other", "/api/brands?x=1", "/api/brands/alpha?x=1", "/api/index.html", "/etc/passwd"):
             with self.subTest(path=path):
                 self.assertEqual(self.json("GET", path)[0], 404)
 
@@ -247,6 +256,103 @@ class ReadTest(ServerCase):
                 self.assertEqual(response.getheader("Content-Security-Policy"), server.CSP)
                 self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
                 self.assertEqual(response.getheader("Cache-Control"), "no-store")
+
+
+class PageTest(ServerCase):
+    """The built page: its files, and nothing outside them."""
+
+    def test_the_root_is_the_index_and_each_file_has_its_own_type(self):
+        for path, content_type, text in (("/", "text/html; charset=utf-8", "<!doctype html><title>page</title>"), ("/index.html", "text/html; charset=utf-8", None),
+                                         ("/theme-init.js", "text/javascript; charset=utf-8", "// theme"), ("/assets/app-1a2b.js", "text/javascript; charset=utf-8", "// app"),
+                                         ("/assets/app-1a2b.css", "text/css; charset=utf-8", "body{}"), ("/assets/font-9z.woff2", "font/woff2", "wOF2"),
+                                         ("/assets/a%20b.js", "text/javascript; charset=utf-8", "// spaced")):
+            with self.subTest(path=path):
+                status, response, body = self.call("GET", path, origin=None)
+                self.assertEqual((status, response.getheader("Content-Type")), (200, content_type))
+                self.assertEqual(response.getheader("Content-Length"), str(len(body)))
+                if text:
+                    self.assertEqual(body, text.encode())
+
+    def test_a_page_answer_carries_the_security_headers_and_is_not_cached(self):
+        for path in ("/", "/assets/app-1a2b.js"):
+            _, response, _ = self.call("GET", path, origin=None)
+            with self.subTest(path=path):
+                self.assertEqual(response.getheader("Content-Security-Policy"), server.CSP)
+                self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+                self.assertEqual(response.getheader("Cache-Control"), "no-store")
+                self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
+
+    def test_the_page_loads_with_the_origin_a_browser_sends_for_a_module_script(self):
+        self.assertEqual(self.call("GET", "/assets/app-1a2b.js")[0], 200)  # `origin="own"`: same-origin requests of a crossorigin script carry it
+        self.assertEqual(self.call("GET", "/", origin="http://evil.example")[0], 403)
+        self.assertEqual(self.call("GET", "/assets/app-1a2b.js", headers={"Host": f"rebound.example:{self.port}"})[0], 403)
+
+    def test_head_answers_without_a_body(self):
+        status, response, body = self.call("HEAD", "/", origin=None)
+        self.assertEqual((status, body), (200, b""))
+        self.assertGreater(int(response.getheader("Content-Length")), 0)
+
+    def test_only_reading_works_on_the_page(self):
+        for method in ("POST", "DELETE", "PUT"):
+            with self.subTest(method=method):
+                self.assertIn(self.call(method, "/", body={})[0], (404, 501))
+                self.assertIn(self.call(method, "/assets/app-1a2b.js", body={})[0], (404, 501))
+
+    def test_a_name_that_leaves_the_folder_or_is_hidden_is_404(self):
+        for path in ("/../secret.js", "/%2e%2e/secret.js", "/assets/../../secret.js", "/assets/%2E%2E/%2E%2E/secret.js", "/..%2Fsecret.js", "/assets%2F..%2F..%2Fsecret.js",
+                     "/.hidden.js", "/assets/.%2e/index.html", "//secret.js", "/assets//app-1a2b.js", "/assets/", "/assets",
+                     "/index.html%00.js", "/index.html/", "/./index.html", "/assets/./app-1a2b.js"):
+            with self.subTest(path=path):
+                status, _, body = self.call("GET", path, origin=None)
+                self.assertEqual(status, 404)
+                self.assertNotIn(b"secret", body)
+
+    def test_a_file_of_an_unlisted_type_is_not_served(self):
+        for path in ("/assets/data.json", "/assets/data.JSON", "/index"):
+            with self.subTest(path=path):
+                self.assertEqual(self.call("GET", path, origin=None)[0], 404)
+
+    def test_a_link_out_of_the_folder_is_not_followed(self):
+        os.symlink(os.path.join(os.path.dirname(self.web), "secret.js"), os.path.join(self.web, "assets", "link.js"))
+        os.symlink(os.path.dirname(self.web), os.path.join(self.web, "up"))
+        os.makedirs(self.web + "-old")  # a sibling whose name starts with the page folder's name
+        with open(os.path.join(self.web + "-old", "old.js"), "w", encoding="utf-8") as f:
+            f.write("// old")
+        os.symlink(self.web + "-old", os.path.join(self.web, "older"))
+        for path in ("/assets/link.js", "/up/secret.js", "/older/old.js"):
+            with self.subTest(path=path):
+                self.assertEqual(self.call("GET", path, origin=None)[0], 404)
+
+    def test_a_name_in_other_letters_is_served_or_missing_but_never_an_error(self):
+        for path in ("/INDEX.HTML", "/Assets/APP-1A2B.JS", "/assets/app-1a2b.JS"):  # a file system that ignores case (macOS) finds these
+            with self.subTest(path=path):
+                self.assertIn(self.call("GET", path, origin=None)[0], (200, 404))
+
+    def test_a_query_is_404_as_it_is_for_the_api(self):
+        self.assertEqual(self.call("GET", "/?x=1", origin=None)[0], 404)
+        self.assertEqual(self.call("GET", "/assets/app-1a2b.js?v=1", origin=None)[0], 404)
+
+    def test_the_api_is_not_shadowed_by_the_page(self):
+        with open(os.path.join(self.web, "assets", "x.js"), "w", encoding="utf-8") as f:
+            f.write("// x")
+        os.makedirs(os.path.join(self.web, "api"))
+        with open(os.path.join(self.web, "api", "brands.js"), "w", encoding="utf-8") as f:
+            f.write("// shadow")
+        status, response, body = self.call("GET", "/api/brands.js", origin=None)
+        self.assertEqual((status, response.getheader("Content-Type")), (404, "application/json; charset=utf-8"))
+        self.assertEqual(self.json("GET", "/api/brands")[1], {"brands": ["alpha"]})
+
+    def test_an_unbuilt_page_says_so_on_the_root_and_is_a_plain_404_elsewhere(self):
+        os.remove(os.path.join(self.web, "index.html"))
+        status, body = self.json("GET", "/", origin=None)
+        self.assertEqual(status, 404)
+        self.assertIn("npm run build", body["error"])
+        self.assertEqual(self.json("GET", "/index.html", origin=None), (404, {"error": "no such address"}))
+
+    def test_a_server_without_a_page_folder_is_404_not_500(self):
+        shutil.rmtree(self.web)
+        self.assertEqual(self.call("GET", "/", origin=None)[0], 404)
+        self.assertEqual(self.call("GET", "/assets/app-1a2b.js", origin=None)[0], 404)
 
 
 class AddTest(ServerCase):

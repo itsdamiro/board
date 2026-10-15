@@ -1,4 +1,4 @@
-"""The local HTTP server and its API (ADR 001, decisions 1, 5, 6 and 8; ADR 002, decision 6).
+"""The local HTTP server, its API and the built page (ADR 001, decisions 1, 5, 6 and 8; ADR 002, decisions 1 and 6).
 
 It listens on 127.0.0.1 only. Every request must name this server in `Host` (which stops a web page reaching it through a
 DNS name that points here), and a request that changes anything must carry an `Origin` that is this server's own; a request
@@ -10,6 +10,8 @@ Routes (all under /api; errors are `{"error": "<plain text>"}`):
   GET    /api/brands/<slug>/images/<id>.<ext> the original image;  .../thumbs/<id>.<ext> its thumbnail
   POST   /api/brands/<slug>/items             {"description", "source", "image"(base64)} -> the new item, 201
   DELETE /api/brands/<slug>/items/<key>       removes the item whose key the brand view gave
+
+Everything else that is read (GET, HEAD) is the built page, `web/dist/`: `/` is its index.html, other addresses are its files.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import os
 import re
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +30,14 @@ from board.moodboard import MoodboardError
 
 IMAGE_CACHE = "private, max-age=31536000, immutable"  # an image is named by its id and never changes; a deleted id is never made again
 CSP = "default-src 'self'; img-src 'self' blob:"  # ADR 002, decision 6: its own origin and blob: images, nothing else
+WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist")  # ADR 002, decision 1
+PAGE_TYPES = {  # the only files the page route serves, each with its own type (nosniff makes a wrong one a broken script)
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+}
 MAX_BODY = images.MAX_BYTES * 4 // 3 + 64 * 1024  # a 25 MB image in base64, and the text around it
 _BRAND, _KEY = r"(?P<slug>[^/]+)", r"(?P<key>[0-9a-f]{64})"
 _IMAGE = rf"(?P<kind>images|thumbs)/(?P<id>{moodboard.ID_PATTERN})\.(?P<ext>{'|'.join(images.CONTENT_TYPES)})"
@@ -36,6 +47,7 @@ ROUTES = [
     ("GET", re.compile(rf"/api/brands/{_BRAND}/{_IMAGE}"), "image"),
     ("POST", re.compile(rf"/api/brands/{_BRAND}/items"), "add"),
     ("DELETE", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}"), "delete"),
+    ("GET", re.compile(r"/(?!api/)(?P<name>.*)"), "page"),  # last, and never under /api: an unknown API address stays a JSON 404
 ]
 
 
@@ -47,6 +59,18 @@ def refusal(method: str, host: str | None, origin: str | None, port: int) -> str
     if origin is None:
         return None if method in ("GET", "HEAD") else "a request that changes something must say where it comes from"
     return None if origin in {f"http://{n}" for n in names} else "this request comes from another origin"
+
+
+def page_file(web_dir: str, name: str) -> str | None:
+    """The built file the quoted `name` (no leading slash) stands for, or None. Only a plain file of a known type inside `web_dir`."""
+    parts = unquote(name).split("/")
+    if any(not part or part.startswith(".") or "\0" in part for part in parts):
+        return None
+    if os.path.splitext(parts[-1])[1].lower() not in PAGE_TYPES:
+        return None
+    root = os.path.realpath(web_dir)
+    path = os.path.realpath(os.path.join(root, *parts))
+    return path if path.startswith(root + os.sep) and os.path.isfile(path) else None
 
 
 class Failure(Exception):
@@ -151,6 +175,15 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             self._send(HTTPStatus.OK, f.read(), images.CONTENT_TYPES[ext], IMAGE_CACHE)
 
+    def _route_page(self, name: str) -> None:
+        path = page_file(self.server.web_dir, name or "index.html")
+        if not path:
+            if not name:
+                raise Failure(HTTPStatus.NOT_FOUND, "the page is not built yet: run `npm run build` in the web folder")
+            raise Failure(HTTPStatus.NOT_FOUND, "no such address")
+        with open(path, "rb") as f:
+            self._send(HTTPStatus.OK, f.read(), PAGE_TYPES[os.path.splitext(path)[1].lower()])
+
     def _route_add(self, slug: str) -> None:
         data = self._body()
         description, source, picture = data.get("description", ""), data.get("source"), data.get("image")
@@ -171,6 +204,7 @@ class BoardServer(ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 64  # the default of 5 resets some of a dozen thumbnails a page asks for at once
 
-    def __init__(self, vault_path: str, port: int = 0):
+    def __init__(self, vault_path: str, port: int = 0, web_dir: str | None = None):
         super().__init__(("127.0.0.1", port), Handler)  # loopback only (ADR 001, decision 1)
         self.vault = vault_path
+        self.web_dir = web_dir or WEB_DIR

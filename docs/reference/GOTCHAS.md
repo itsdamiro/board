@@ -36,7 +36,7 @@
 ### A page that works in the dev server can break under the real server's Content-Security-Policy
 - **Symptom:** the page is fine on `npm run dev` and loses fonts, a script or its theme in the built page.
 - **Cause:** the dev server sends no policy, and the Python server's is `default-src 'self'; img-src 'self' blob:` (ADR 002, decision 6): no inline script, no inline style attribute, no `data:` URI. Vite inlines small assets as `data:` by default (fonts included), and an inline `<script>` for the theme would be refused.
-- **Do this:** keep `build.assetsInlineLimit: 0` in `web/vite.config.ts`, keep the theme script a file (`web/public/theme-init.js`), and set styles with classes or the style object in script, not a `style=` attribute in markup. Check a built page against the policy: serve `web/dist/` with the same header and read the console, which reports each violation as an error.
+- **Do this:** keep `build.assetsInlineLimit: 0` in `web/vite.config.ts`, keep the theme script a file (`web/public/theme-init.js`), and set styles with classes or the style object in script, not a `style=` attribute in markup. Check a built page against the policy: run the real server (`python -m board --vault <a synthetic vault>`), open its address and read the console, which reports each violation as an error.
 
 ## 2. Recipes
 
