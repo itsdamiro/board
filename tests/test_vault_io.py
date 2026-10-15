@@ -75,7 +75,7 @@ class VaultIoTest(unittest.TestCase):
         self.assertEqual(self.read(path), b"caf\xe9\n")
 
     def test_append_refuses_when_the_note_changed_under_it(self):
-        with self.changing_the_note_meanwhile("append"), self.assertRaises(moodboard.MoodboardError):
+        with self.changing_the_note_meanwhile("append"), self.assertRaises(vault_io.NoteChanged):
             vault_io.append_block(self.path, NEW)
         self.assertEqual(self.read(), NOTE.encode() + b"\nadded elsewhere\n")
 
@@ -161,7 +161,7 @@ class VaultIoTest(unittest.TestCase):
         self.assertEqual(self.leftovers(), [])
 
     def test_delete_refuses_when_the_note_changed_under_it_and_cleans_up(self):
-        with self.changing_the_note_meanwhile("remove"), self.assertRaises(moodboard.MoodboardError):
+        with self.changing_the_note_meanwhile("remove"), self.assertRaises(vault_io.NoteChanged):
             vault_io.delete_block(self.path, self.key_of("second"))
         self.assertEqual(self.read(), NOTE.encode() + b"\nadded elsewhere\n")
         self.assertEqual(self.leftovers(), [])

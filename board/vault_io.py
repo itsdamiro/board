@@ -17,6 +17,10 @@ import threading
 from board import moodboard
 from board.moodboard import Block, MoodboardError
 
+class NoteChanged(MoodboardError):
+    """The note changed while the app was writing, so nothing was written; trying again is right."""
+
+
 _lock = threading.Lock()  # one write at a time in this process; another program's edit is caught by the checks below
 
 
@@ -29,6 +33,11 @@ def _read(path: str) -> tuple[bytes, str]:
         raise MoodboardError(f"{os.path.basename(path)} is not UTF-8 text") from err
 
 
+def read_blocks(path: str) -> list[Block]:
+    """The items of the note in file order. FileNotFoundError if it is missing; MoodboardError if it cannot be read safely."""
+    return moodboard.parse(_read(path)[1])
+
+
 def append_block(path: str, block: str) -> None:
     """Add `block` (from moodboard.format_block) after the note's last line. Only the new bytes are written."""
     with _lock:
@@ -36,7 +45,7 @@ def append_block(path: str, block: str) -> None:
         added = moodboard.append(text, block)[len(text):].encode("utf-8")
         with open(path, "ab") as f:
             if os.fstat(f.fileno()).st_size != len(raw):
-                raise MoodboardError("the note changed while it was being written; nothing was written, try again")
+                raise NoteChanged("the note changed while it was being written; nothing was written, try again")
             f.write(added)
 
 
@@ -55,7 +64,7 @@ def delete_block(path: str, key: str) -> Block:
                 f.write(new_text.encode("utf-8"))
             shutil.copymode(real, temp)
             if _read(real)[0] != raw:
-                raise MoodboardError("the note changed while it was being written; nothing was removed, try again")
+                raise NoteChanged("the note changed while it was being written; nothing was removed, try again")
             os.replace(temp, real)
         except BaseException:
             with contextlib.suppress(FileNotFoundError):
