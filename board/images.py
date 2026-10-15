@@ -132,3 +132,15 @@ def path_of(vault: str, slug: str, image_id: str, ext: str, thumb: bool) -> str 
     folder = _folders(vault, slug, create=False)[1 if thumb else 0]
     path = os.path.join(folder, f"{image_id}.{ext}") if folder else ""
     return path if path and os.path.isfile(path) and not os.path.islink(path) else None
+
+
+def thumb_size(vault: str, slug: str, image_id: str, ext: str) -> tuple[int, int] | None:
+    """The width and height of an image's thumbnail, read from the file's header, or None if it is missing or unreadable."""
+    path = path_of(vault, slug, image_id, ext, thumb=True)
+    if path is None:
+        return None
+    try:
+        with Image.open(path) as image:
+            return image.size
+    except (OSError, ValueError):  # not an image, or unreadable; the page then shows it without reserved space
+        return None

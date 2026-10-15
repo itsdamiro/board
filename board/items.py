@@ -35,7 +35,8 @@ def _url(slug: str, kind: str, block: Block) -> str:
     return f"/api/brands/{quote(slug, safe='')}/{kind}/{block.image_id}.{block.ext}"
 
 
-def item_view(slug: str, block: Block) -> dict:
+def item_view(vault_path: str, slug: str, block: Block) -> dict:
+    size = images.thumb_size(vault_path, slug, block.image_id, block.ext) if block.image_id else None
     return {
         "key": block.key,
         "text": block.text,
@@ -43,6 +44,8 @@ def item_view(slug: str, block: Block) -> dict:
         "source": block.source,
         "image": _url(slug, "images", block) if block.image_id else None,
         "thumb": _url(slug, "thumbs", block) if block.image_id else None,
+        "width": size[0] if size else None,  # of the thumbnail, so the page can reserve the space before it loads
+        "height": size[1] if size else None,
     }
 
 
@@ -53,7 +56,7 @@ def brand_view(vault_path: str, slug: str) -> dict:
     moodboard_view: dict = {"exists": os.path.isfile(path), "problem": None, "items": []}
     if moodboard_view["exists"]:
         try:
-            moodboard_view["items"] = [item_view(slug, b) for b in reversed(vault_io.read_blocks(path))]
+            moodboard_view["items"] = [item_view(vault_path, slug, b) for b in reversed(vault_io.read_blocks(path))]
         except (MoodboardError, OSError) as err:
             moodboard_view["problem"] = str(err) if isinstance(err, MoodboardError) else "the Moodboard note could not be read"
     return {**dataclasses.asdict(brand), "moodboard": moodboard_view}
@@ -85,7 +88,7 @@ def add_item(vault_path: str, slug: str, description: str, source: str | None, i
         if image_id:
             images.remove(vault_path, slug, image_id, ext)
         raise
-    return item_view(slug, moodboard.parse(block)[0])
+    return item_view(vault_path, slug, moodboard.parse(block)[0])
 
 
 def delete_item(vault_path: str, slug: str, key: str) -> None:

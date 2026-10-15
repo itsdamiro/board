@@ -135,7 +135,28 @@ class BrandViewTest(VaultCase):
         self.assertEqual([i["description"] for i in listed], ["second", "first"])
         self.assertEqual(listed[1], first)
         self.assertEqual(listed[0], second)
-        self.assertEqual(set(listed[0]), {"key", "text", "description", "source", "image", "thumb"})
+        self.assertEqual(set(listed[0]), {"key", "text", "description", "source", "image", "thumb", "width", "height"})
+
+    def test_an_item_with_an_image_carries_its_thumbnail_size_and_one_without_has_none(self):
+        added = items.add_item(self.vault, "alpha", "wide", None, make_image("png", (1200, 600)))
+        plain = items.add_item(self.vault, "alpha", "plain", None, None)
+        self.assertEqual((added["width"], added["height"]), (640, 320))
+        self.assertEqual((plain["width"], plain["height"]), (None, None))
+        listed = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
+        self.assertEqual([(i["width"], i["height"]) for i in listed], [(None, None), (640, 320)])
+
+    def test_an_item_whose_thumbnail_is_gone_is_still_listed_with_no_size(self):
+        added = items.add_item(self.vault, "alpha", "wide", None, make_image("png", (1200, 600)))
+        os.unlink(os.path.join(self.vault, "Board", "alpha", "thumbs", os.path.basename(added["thumb"])))
+        (listed,) = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
+        self.assertEqual((listed["image"] is not None, listed["width"], listed["height"]), (True, None, None))
+
+    def test_an_unreadable_thumbnail_gives_no_size_and_does_not_break_the_brand(self):
+        added = items.add_item(self.vault, "alpha", "wide", None, make_image("png", (1200, 600)))
+        with open(os.path.join(self.vault, "Board", "alpha", "thumbs", os.path.basename(added["thumb"])), "wb") as f:
+            f.write(b"not an image")
+        (listed,) = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
+        self.assertEqual((listed["width"], listed["height"]), (None, None))
 
     def test_a_slug_with_unusual_characters_is_quoted_in_urls(self):
         self.make_brand("it's café")
