@@ -1,17 +1,19 @@
 ---
 type: decision
-status: proposed
+status: accepted
 date: 2026-10-15
 projects: [board]
 concepts: [Vault conventions]
 amends: []
 supersedes: []
-tags: [type/decision, status/proposed, project/board, topic/architecture, topic/privacy]
+tags: [type/decision, status/accepted, project/board, topic/architecture, topic/privacy]
 ---
 
 # 001 — The board is a small local web app that reads brand notes from the vault and writes images and Moodboard blocks into it
 
 > **Summary.** A separate local web app, with its own repository, shows a brand's notes as read-only text next to a grid of its images, and takes new items by paste: a brand, a screenshot, an optional page address and a one-line description. It reads and writes the vault only as workflow ADR 018 fixes, through a small local API that the page and a later browser extension both call. It costs one more app to run and a dependency for thumbnails.
+
+Accepted by the owner on 2026-10-15: decisions 1 to 11, including Python with Pillow and a standard-library server; the items under "Open" stay open for later slices.
 
 ## Context
 
@@ -36,6 +38,7 @@ The owner documents brands, personal and client, in the vault that Sympose reads
 8. **What it writes.** Only `Board/<slug>/` and the end of the brand's Moodboard note, in the block format of workflow ADR 018; never any other note, and never a block it did not write. Deleting an item removes its block and its files together. A block edited by hand in Sympose or Obsidian is shown as it stands.
 9. **Not in the first version.** Editing note text in the app, copying descriptions anywhere else, a search, the extension, and automatic page capture. Also an Assets section for a brand's own logos and icons, including SVG: it needs its own record, because an SVG can carry script (shown only through `<img>`, served with `nosniff` and a sandbox policy), because it holds the brand's own deliverables apart from inspiration, because workflow ADR 018 says the vault holds no client assets (it would need an amendment saying `Board/` is local and never pushed), and because a copy here can drift from the master file. Small SVG source inline in a note is allowed by the owner for their own logos and icons, but no app in the owner's setup draws it from a note (Sympose does not; Obsidian does).
 10. **Tests** cover the block reader and writer on synthetic text (a block, one with no image, one with no address, one with extra lines), the refusals in decision 6, and the origin check; each rule is checked against a weakened version with `scripts/mutate.py` once there is code.
+11. **Language and dependencies.** Python, with a minimal server built on the standard library (`http.server`) and no web framework. The page is plain HTML, CSS and JavaScript served by that server and calls its API. Pillow is the one third-party dependency, used only to make thumbnails (decision 6) and to read an image's size; it is pinned in a requirements file added with the first code. Anything beyond it needs its own record (`docs/CODE_QUALITY_STANDARDS.md`, section 0). The owner chose this on 2026-10-15, taking the recommendation: "Python with Pillow and a minimal stdlib server". The reason behind it is that the vault's own scripts are Python, so the block reader and writer, the gates and the mutation check all run in one language, and the standard library already covers the server, the file handling and the tests.
 
 ## Consequences
 
@@ -43,7 +46,7 @@ The owner can drop a screenshot and a thought into a brand in a few keystrokes, 
 
 The cost is that a local server that writes files is a target for any page in the browser, so the origin check and the loopback binding are part of the design and need their own tests. Thumbnails need an image library, which the standard library does not provide. `Board/` has no history or remote, so its backup is the owner's to arrange. A description written for a client brand reaches the private remote through the Moodboard note, as ADR 018 says.
 
-Open: the Assets section (decision 9); the language and framework (the vault scripts are Python, and Pillow was the library discussed for thumbnails; neither is decided); where the server's own settings live; how a block is found again for deleting (by its embed's id is the likely key); whether Sympose renders `![[…png]]` in the Moodboard (an open question in the workflow's SPEC); how the extension is allowed through the origin check; a backup for `Board/`.
+Open: the Assets section (decision 9); the minimum Python version and how Pillow is installed (a virtual environment is likely; decision 11 fixes the language and the library, not these); where the server's own settings live; how a block is found again for deleting (by its embed's id is the likely key); whether Sympose renders `![[…png]]` in the Moodboard (an open question in the workflow's SPEC); how the extension is allowed through the origin check; a backup for `Board/`.
 
 ## Alternatives rejected
 
@@ -52,4 +55,8 @@ Open: the Assets section (decision 9); the language and framework (the vault scr
 - **A bookmarklet as the second input.** Cheap, but sites with a strict content policy block it and Safari is stricter about reaching `localhost`. Would be right if the extension proved too heavy and the owner's browser allowed it.
 - **Resizing in the browser page.** No server dependency, but the extension would have to do it again. Would be right if the page stayed the only client.
 - **Shrinking the original on paste.** Saves disk, but cannot be undone; a screenshot cannot be retaken. Would be right if disk use grew past what the owner wants to keep, as a separate, explicit step.
+- **A JavaScript stack (Node, with or without a UI framework).** Would match the UI of Stylo and Sympose, and the page is JavaScript anyway. But the vault scripts, gates and mutation check are Python, so the block logic would need a second toolchain and a second set of tests; Node's standard library has no image resizing, so thumbnails would bring in a native package (for example `sharp`) that is heavier than Pillow, and a framework would add more. Would be right if the app were to share code with Stylo or Sympose, or if the page grew into a real application.
+- **A Python web framework (Flask, FastAPI or similar).** Routing and request parsing are less code to write. But each adds a dependency tree to cover what `http.server` already does for about five routes on one loopback address, and the origin check and the size limit (decisions 1 and 6) are code we write and test either way. Would be right if the API grew past a handful of routes, or if the standard-library server proved unsafe or too slow under real use.
+- **Thumbnails with macOS `sips`, no Pillow.** Zero Python dependencies, but it shells out to a tool that exists only on macOS, handles file formats differently, and is harder to test with generated images. Would be right if the app were macOS-only for good and the one dependency became a burden.
+- **A native Swift app.** A good fit for the Mac and for pasting from the clipboard, but it cannot share the API with a browser extension, and none of the vault tooling is Swift. Would be right if the owner wanted a menu-bar app and dropped the extension.
 - **Cropping thumbnails to a fixed ratio.** A tidy grid, but the owner already chose the crop that matters. Would be right if the grid were only an index.
