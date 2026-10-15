@@ -24,6 +24,7 @@ FIRST_PANELS = ("Positioning", "Voice", "Visual identity", "Rejected ideas", "Mo
 _FIRST_FOLDED = tuple(t.casefold() for t in FIRST_PANELS)
 _WIKILINK = re.compile(r"(?<!!)\[\[(?P<target>[^\[\]|]*)(?:\|(?P<shown>[^\[\]]*))?\]\]")
 _HEADING = re.compile(r"#{1,6}(?:\s|$)")
+_DATE = re.compile(r"(?P<day>\d{4}-\d{2}-\d{2})(?:[T ](?P<time>\d{2}:\d{2}))?")
 
 
 class VaultError(ValueError):
@@ -39,6 +40,7 @@ class Panel:
     title: str  # the part of the file name after "<slug> - "
     text: str  # plain text; empty if `problem` is set
     problem: str | None  # why the note could not be shown, or None
+    date: str | None = None  # the frontmatter's `created`, as `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`; None if missing or not a date
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,12 @@ def _read_note(folder: str, name: str) -> tuple[dict[str, str], str, str | None]
     return front, body.strip("\n").rstrip(), None
 
 
+def note_date(front: Mapping[str, str]) -> str | None:
+    """The note's `created` as a sortable text, or None. The shape is checked, not the calendar: it only orders cards."""
+    found = _DATE.fullmatch(front.get("created", ""))
+    return None if found is None else found["day"] + (f"T{found['time']}" if found["time"] else "")
+
+
 def _summary(body: str) -> str:
     """The first run of lines that are neither blank nor headings, joined by spaces."""
     run = []
@@ -171,6 +179,6 @@ def read_brand(vault: str, slug: str) -> Brand:
     for name in names:
         title = name[len(prefix):-len(".md")].strip() if name.startswith(prefix) and name.endswith(".md") else ""
         if title:
-            _, body, problem = _read_note(folder, name)
-            panels.append(Panel(title, body, problem))
+            front, body, problem = _read_note(folder, name)
+            panels.append(Panel(title, body, problem, note_date(front)))
     return Brand(slug, status, client, summary, hub_problem, sorted(panels, key=_panel_order))

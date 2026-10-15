@@ -134,8 +134,22 @@ class BrandViewTest(VaultCase):
         listed = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
         self.assertEqual([i["description"] for i in listed], ["second", "first"])
         self.assertEqual(listed[1], first)
-        self.assertEqual(listed[0], second)
-        self.assertEqual(set(listed[0]), {"key", "text", "description", "source", "image", "thumb", "width", "height"})
+        self.assertEqual(listed[0], {**second, "date": first["date"]})  # an item with no image takes the date before it, in the list only
+        self.assertEqual(set(listed[0]), {"key", "text", "description", "source", "image", "thumb", "width", "height", "date"})
+
+    def test_an_item_has_the_date_of_its_image_id_and_one_without_takes_the_one_before_it(self):
+        text = NOTE + "![[2026-10-14-0900-aaaa.png]]\nfirst\n\nno image, no date of its own\n\n![[2026-10-15-1432-bbbb.png]]\nthird\n\nlast, no image\n"
+        self.make_brand("beta", text)
+        listed = items.brand_view(self.vault, "beta")["moodboard"]["items"]
+        self.assertEqual(
+            [(i["description"] or i["text"], i["date"]) for i in listed],
+            [("last, no image", "2026-10-15T14:32"), ("third", "2026-10-15T14:32"), ("no image, no date of its own", "2026-10-14T09:00"), ("first", "2026-10-14T09:00")],
+        )
+
+    def test_items_before_any_dated_one_have_no_date(self):
+        self.make_brand("beta", NOTE + "plain words\n\n![[2026-10-15-1432-bbbb.png]]\nwith image\n")
+        listed = items.brand_view(self.vault, "beta")["moodboard"]["items"]
+        self.assertEqual([i["date"] for i in listed], ["2026-10-15T14:32", None])
 
     def test_an_item_with_an_image_carries_its_thumbnail_size_and_one_without_has_none(self):
         added = items.add_item(self.vault, "alpha", "wide", None, make_image("png", (1200, 600)))

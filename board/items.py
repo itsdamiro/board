@@ -35,6 +35,11 @@ def _url(slug: str, kind: str, block: Block) -> str:
     return f"/api/brands/{quote(slug, safe='')}/{kind}/{block.image_id}.{block.ext}"
 
 
+def _id_date(image_id: str | None) -> str | None:
+    """`2026-10-15T14:32` from an id like 2026-10-15-1432-a3f9, or None for an item with no image the app made."""
+    return None if image_id is None else f"{image_id[:10]}T{image_id[11:13]}:{image_id[13:15]}"
+
+
 def item_view(vault_path: str, slug: str, block: Block) -> dict:
     size = images.thumb_size(vault_path, slug, block.image_id, block.ext) if block.image_id else None
     return {
@@ -46,6 +51,7 @@ def item_view(vault_path: str, slug: str, block: Block) -> dict:
         "thumb": _url(slug, "thumbs", block) if block.image_id else None,
         "width": size[0] if size else None,  # of the thumbnail, so the page can reserve the space before it loads
         "height": size[1] if size else None,
+        "date": _id_date(block.image_id),  # brand_view gives an item with no date of its own the one before it
     }
 
 
@@ -56,7 +62,13 @@ def brand_view(vault_path: str, slug: str) -> dict:
     moodboard_view: dict = {"exists": os.path.isfile(path), "problem": None, "items": []}
     if moodboard_view["exists"]:
         try:
-            moodboard_view["items"] = [item_view(vault_path, slug, b) for b in reversed(vault_io.read_blocks(path))]
+            blocks = vault_io.read_blocks(path)
+            views, date = [], None
+            for block in blocks:  # in file order, which is the order they were added: an item with no date of its own takes the one before it
+                view = item_view(vault_path, slug, block)
+                view["date"] = date = view["date"] or date
+                views.append(view)
+            moodboard_view["items"] = views[::-1]
         except (MoodboardError, OSError) as err:
             moodboard_view["problem"] = str(err) if isinstance(err, MoodboardError) else "the Moodboard note could not be read"
     return {**dataclasses.asdict(brand), "moodboard": moodboard_view}
