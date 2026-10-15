@@ -18,6 +18,16 @@
 - **Cause:** the file-writing tool turned the escape into the actual character (U+FEFF, the byte-order mark).
 - **Do this:** after writing code that holds such an escape, run `grep -c $'\xef\xbb\xbf' <file>`; it must print 0. Fix a hit with a short Python script that replaces the character with a backslash and `ufeff`.
 
+### Several requests at once reset or fail
+- **Symptom:** a test that adds eight items at the same time gets `Connection reset by peer`, or one of them a 500, on some runs only.
+- **Cause:** two separate things. `socketserver`'s listen backlog is 5, and macOS resets the connections past it (fixed: `request_queue_size = 64` in `BoardServer`). And two requests creating `Board/<slug>` at once: the second `os.mkdir` raised `FileExistsError` (fixed in `images._real_folder`). The check after the mkdir still applies, so a folder made by someone else is still refused if it is a link.
+- **Do this:** a test for concurrency has to run several times to show a flaw: `for i in 1 2 3 4 5 6; do .venv/bin/python -m unittest tests.test_server.AddTest.test_several_adds_at_once_all_land; done`.
+
+### The tests need the virtual environment
+- **Symptom:** `python3 -m unittest` fails on `import PIL` from a clean checkout.
+- **Cause:** Pillow is installed only in `.venv` (ADR 001, amendment on slice 3a); the system `python3` has none.
+- **Do this:** make `.venv` as the README says and run `.venv/bin/python -m unittest ...`; `scripts/gates.conf` already does.
+
 ## 2. Recipes
 
 None yet.

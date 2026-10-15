@@ -4,7 +4,7 @@ A small local web app for brand work. It shows a brand's notes from your Markdow
 
 ## Status
 
-Design stage: the code that reads and writes a Moodboard's blocks exists and is tested (`board/moodboard.py`, `board/vault_io.py`); there is no server and no page yet. The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
+Work in progress: the code that reads a vault and reads and writes a Moodboard's blocks, the image intake with thumbnails, and the local API all exist and are tested (`board/`, listed in [`docs/reference/API.md`](docs/reference/API.md)); there is no page yet, so nothing but a script or `curl` can use it. The design is in [`docs/decisions/`](docs/decisions/): the app and its server ([001](docs/decisions/001-a-small-local-app-over-the-vault.md)), the page ([002](docs/decisions/002-the-page-is-a-react-single-page-app.md)) and this repository's public terms ([003](docs/decisions/003-the-repository-is-public-under-mit.md)). This page describes what the app is designed to do; it will say "does" only for what has tests.
 
 ## What it will do
 
@@ -26,10 +26,20 @@ It never edits another note and never edits a block. Deleting an item removes on
 
 **Back up your vault, and the `Board/` folder, before first use.** `Board/` is meant to be kept out of git, so nothing else holds a copy of your images. The software is provided as is, with no warranty (see the licence).
 
-## Requirements (planned)
+## Run the server (no page yet)
 
-- Python 3.11 or newer (the server and the vault code), with [Pillow](https://python-pillow.org/) for thumbnails.
-- Node and npm, to build the page (React, TypeScript, Vite, Tailwind). Not needed to run a copy that is already built.
+```
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m board --vault /path/to/your/vault    # or set BOARD_VAULT; --port N, default 8765
+```
+
+It answers only on `127.0.0.1`. Back up your vault first (see above).
+
+## Requirements
+
+- Python 3.11 or newer (the server and the vault code), with [Pillow](https://python-pillow.org/) for thumbnails (`requirements.txt`).
+- Planned, for the page: Node and npm, to build it (React, TypeScript, Vite, Tailwind). Not needed to run a copy that is already built.
 - A vault that follows the layout above. The vault path is given as an argument or an environment variable; it is never stored in the code.
 
 ## Security
