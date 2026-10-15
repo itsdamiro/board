@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoColumns, COLUMNS_KEY, MAX_COLUMNS, readColumns, writeColumns } from "./columns";
+import { autoColumns, columnRange, COLUMNS_KEY, MAX_COLUMNS, readColumns, writeColumns } from "./columns";
 
 const refusing = {
   getItem: () => {
@@ -10,18 +10,39 @@ const refusing = {
   },
 };
 
+describe("columnRange", () => {
+  it("is one column and no choice on a phone, 2 to 8 on a tablet, 3 to 8 on a large screen", () => {
+    expect(columnRange(0)).toEqual({ min: 1, max: 1 });
+    expect(columnRange(375 - 48)).toEqual({ min: 1, max: 1 });
+    expect(columnRange(720)).toEqual({ min: 2, max: 8 });
+    expect(columnRange(1392)).toEqual({ min: 3, max: 8 });
+    expect(columnRange(10_000)).toEqual({ min: 3, max: MAX_COLUMNS });
+  });
+
+  it("changes at the exact stage widths of a tablet and of a large screen", () => {
+    expect(columnRange(639)).toEqual({ min: 1, max: 1 });
+    expect(columnRange(640)).toEqual({ min: 2, max: 8 });
+    expect(columnRange(959)).toEqual({ min: 2, max: 8 });
+    expect(columnRange(960)).toEqual({ min: 3, max: 8 });
+  });
+});
+
 describe("autoColumns", () => {
-  it("fits as many 18 rem cards as the window has room for, at least one and at most the top count", () => {
-    expect(autoColumns(375)).toBe(1);
+  it("fits as many 18 rem cards as the stage has room for, inside the range of its screen", () => {
+    expect(autoColumns(327)).toBe(1);
     expect(autoColumns(100)).toBe(1);
-    expect(autoColumns(1024)).toBe(3);
-    expect(autoColumns(1440)).toBe(4);
+    expect(autoColumns(700)).toBe(2);
+    expect(autoColumns(976)).toBe(3);
+    expect(autoColumns(1392)).toBe(4);
     expect(autoColumns(10_000)).toBe(MAX_COLUMNS);
   });
 
-  it("changes at the exact width where another card fits", () => {
-    expect(autoColumns(48 + 288 * 2 + 16 - 1)).toBe(1);
-    expect(autoColumns(48 + 288 * 2 + 16)).toBe(2);
+  it("is always inside the range", () => {
+    for (let width = 0; width <= 3000; width += 7) {
+      const { min, max } = columnRange(width);
+      expect(autoColumns(width)).toBeGreaterThanOrEqual(min);
+      expect(autoColumns(width)).toBeLessThanOrEqual(max);
+    }
   });
 });
 

@@ -95,3 +95,12 @@ The owner reviewed the screens of the 2026-10-15 amendment on the running page a
 8. **Two small losses, taken knowingly.** An item of only typed words can no longer be added from the page, because the field appears only once an image or an address is there (the API still accepts one). And with the left column gone, a brand that failed to load is retried with a "Try again" button next to the error, not by choosing the same brand again.
 
 Consequences: the page gains two dependencies and a component folder; the input box scrolls away with the cards, and sits in one column's width, so a pasted image's preview is small in a narrow column; a note without `created` sinks to the end of the grid, so the owner's older notes are dated by adding that line; the reader sees the brand's notes in the same view as its images, at the cost of long notes making tall cards.
+
+## Amendment (2026-10-16): the column count follows the stage
+
+The owner asked, in chat on 2026-10-16, for the page to be responsive, with the number of columns depending on the width of the stage: "on large screens, 3 should be minimum and 8 is max. on phone, there's no +/- button so it's just 1 column. in tablet, 2 and 8 maybe". It changes decision 7 of the amendment above, where a chosen count of 1 to 8 was used whatever the width; the rest stands.
+
+1. **The stage is the cards list's own width**, measured with a `ResizeObserver`, not the window's. The three sizes are by that width: a phone under 640 px, a tablet from 640 px, a large screen from 960 px (the stage is the window less 48 px of padding).
+2. **The counts the buttons allow:** a phone has one column and no buttons; a tablet 2 to 8; a large screen 3 to 8. A count nobody has set is as many columns of about 18 rem as the stage has room for, held inside that range.
+3. **The choice is kept, not changed, by the width.** A remembered count outside the range is shown as the nearest end of it; resizing never writes to local storage, so the chosen count comes back when the stage allows it. Only pressing a button writes it.
+4. **A known cost, taken knowingly:** eight columns on a tablet or on a small large screen make narrow cards (about 70 to 110 px); the owner set the range, and the buttons let them stop sooner.

@@ -8,11 +8,27 @@ export const MIN_COLUMNS = 1;
 export const MAX_COLUMNS = 8;
 export const CARD_WIDTH = 288; // px, the width a card is given when the count is automatic (18 rem)
 export const GAP = 16; // px, between columns (gap-4)
-export const PAGE_PADDING = 48; // px, both sides together (p-6)
+export const PAGE_PADDING = 48; // px, both sides together (p-6); only the guess before the stage is measured
+export const TABLET_STAGE = 640; // px, the stage width from which the screen counts as a tablet (Tailwind's sm)
+export const LARGE_STAGE = 960; // px, the stage width from which the screen counts as a large one
 
-export function autoColumns(windowWidth: number): number {
-  const room = Math.floor((windowWidth - PAGE_PADDING + GAP) / (CARD_WIDTH + GAP));
-  return Math.min(MAX_COLUMNS, Math.max(MIN_COLUMNS, room));
+export type Range = { min: number; max: number };
+
+/** The counts the owner may choose between: one column and no choice on a phone, 2 to 8 on a tablet, 3 to 8 on a large screen. */
+export function columnRange(stageWidth: number): Range {
+  if (stageWidth < TABLET_STAGE) return { min: MIN_COLUMNS, max: MIN_COLUMNS };
+  if (stageWidth < LARGE_STAGE) return { min: 2, max: MAX_COLUMNS };
+  return { min: 3, max: MAX_COLUMNS };
+}
+
+export function clampColumns(count: number, range: Range): number {
+  return Math.min(range.max, Math.max(range.min, count));
+}
+
+/** The count when the owner has not set one: as many cards of the usual width as the stage has room for, within the range. */
+export function autoColumns(stageWidth: number): number {
+  const room = Math.floor((stageWidth + GAP) / (CARD_WIDTH + GAP));
+  return clampColumns(room, columnRange(stageWidth));
 }
 
 export function readColumns(storage: Pick<Storage, "getItem"> | undefined = safeStorage()): number | null {

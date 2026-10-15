@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Minus, Plus } from "lucide-react";
 import { orderCards, type Card } from "./cardOrder";
-import { autoColumns, MAX_COLUMNS, MIN_COLUMNS, readColumns, writeColumns } from "./columns";
+import { autoColumns, clampColumns, columnRange, PAGE_PADDING, readColumns, writeColumns, type Range } from "./columns";
 import type { Brand, Item, Panel } from "./api";
 
-// The brand as cards in columns, as many as the window's width has room for, each card keeping its own proportions
+// The brand as cards in columns, as many as the stage's width has room for, each card keeping its own proportions
 // (ADR 001, decision 4; ADR 002, amendment on the cards). Every text on a card is shown as text (ADR 002, decision 7);
 // an address is a link only because the server wrote it as one.
 
@@ -70,19 +70,19 @@ function Body({ card }: { card: Card }) {
   return <ItemCard item={card.item} />;
 }
 
-function ColumnButtons({ value, onChange }: { value: number; onChange: (count: number) => void }) {
+function ColumnButtons({ value, range, onChange }: { value: number; range: Range; onChange: (count: number) => void }) {
   const button =
     "flex size-7 items-center justify-center rounded-full hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <fieldset className="fixed right-4 bottom-4 flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-card-foreground shadow-md">
       <legend className="sr-only">Columns</legend>
-      <button type="button" aria-label="Fewer columns" disabled={value <= MIN_COLUMNS} onClick={() => onChange(value - 1)} className={button}>
+      <button type="button" aria-label="Fewer columns" disabled={value <= range.min} onClick={() => onChange(value - 1)} className={button}>
         <Minus aria-hidden="true" className="size-4" />
       </button>
       <output aria-live="polite" aria-label="Columns shown" className="w-4 text-center tabular-nums">
         {value}
       </output>
-      <button type="button" aria-label="More columns" disabled={value >= MAX_COLUMNS} onClick={() => onChange(value + 1)} className={button}>
+      <button type="button" aria-label="More columns" disabled={value >= range.max} onClick={() => onChange(value + 1)} className={button}>
         <Plus aria-hidden="true" className="size-4" />
       </button>
     </fieldset>
@@ -93,17 +93,26 @@ function ColumnButtons({ value, onChange }: { value: number; onChange: (count: n
 export default function Cards({ brand, adder }: { brand: Brand; adder?: ReactNode }) {
   const cards = orderCards(brand);
   const [chosen, setChosen] = useState<number | null>(() => readColumns());
-  const [width, setWidth] = useState(() => window.innerWidth);
+  // The stage is the list's own width, so the count follows the room the cards have, not the window's.
+  const [stage, setStage] = useState<HTMLUListElement | null>(null);
+  const [width, setWidth] = useState(() => window.innerWidth - PAGE_PADDING); // a guess until the stage is measured
   useEffect(() => {
-    const follow = () => setWidth(window.innerWidth);
-    window.addEventListener("resize", follow);
-    return () => window.removeEventListener("resize", follow);
-  }, []);
+    if (stage === null) return;
+    const follow = () => {
+      if (stage.clientWidth > 0) setWidth(stage.clientWidth); // 0 is a page not laid out (hidden, or no layout engine)
+    };
+    follow();
+    const watcher = new ResizeObserver(follow);
+    watcher.observe(stage);
+    return () => watcher.disconnect();
+  }, [stage]);
   if (cards.length === 0 && adder === undefined) return null;
-  const count = chosen ?? autoColumns(width);
+  const range = columnRange(width);
+  const count = chosen === null ? autoColumns(width) : clampColumns(chosen, range); // the choice is kept, only shown within the range
+  const choosable = range.min < range.max; // a phone has one column and no buttons
   return (
     <>
-      <ul aria-label="Cards" className="gap-4" style={{ columns: chosen ?? "18rem" }}>
+      <ul ref={setStage} aria-label="Cards" className="gap-4" style={{ columns: chosen === null && choosable ? "18rem" : count }}>
         {adder !== undefined && <li className="mb-4 break-inside-avoid rounded-lg border-2 border-dashed border-border text-card-foreground">{adder}</li>}
         {cards.map((card) => (
           <li key={card.key} className="mb-4 break-inside-avoid overflow-hidden rounded-lg border border-border bg-card text-card-foreground">
@@ -111,9 +120,10 @@ export default function Cards({ brand, adder }: { brand: Brand; adder?: ReactNod
           </li>
         ))}
       </ul>
-      {cards.length > 0 && (
+      {cards.length > 0 && choosable && (
         <ColumnButtons
           value={count}
+          range={range}
           onChange={(next) => {
             setChosen(next);
             writeColumns(next);

@@ -6,6 +6,17 @@ import { BRAND_KEY } from "./lastBrand";
 import { brandView, dropEvent, installServer, item, pasteEvent, png } from "./fakeServer";
 import { STORAGE_KEY } from "./theme";
 
+// A ResizeObserver whose callbacks a test can fire after giving the stage a width (jsdom lays nothing out).
+const watchers: Array<() => void> = [];
+function watchingStage() {
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { watchers.push(callback); } observe() {} unobserve() {} disconnect() {} });
+}
+function resizeStage(width: number) {
+  const list = screen.getByRole("list", { name: "Cards" });
+  Object.defineProperty(list, "clientWidth", { configurable: true, value: width });
+  act(() => watchers.forEach((callback) => callback()));
+}
+
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }));
   URL.createObjectURL = vi.fn(() => "blob:preview");
@@ -14,6 +25,7 @@ beforeEach(() => {
   document.documentElement.className = "";
   // jsdom lacks what Radix's menu asks of the browser
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  watchers.length = 0;
   Element.prototype.hasPointerCapture = () => false;
   Element.prototype.releasePointerCapture = () => {};
   Element.prototype.scrollIntoView = () => {};
@@ -327,37 +339,78 @@ describe("the cards", () => {
     expect(screen.getByRole("status", { name: "Columns shown" }).textContent).toBe("4");
     expect(window.localStorage.getItem(COLUMNS_KEY)).toBe("4");
     fireEvent.click(screen.getByRole("button", { name: "Fewer columns" }));
-    fireEvent.click(screen.getByRole("button", { name: "Fewer columns" }));
-    expect(columns()).toBe("2");
+    expect(columns()).toBe("3");
   });
 
-  it("stops the buttons at one column and at eight", async () => {
+  it("stops the buttons at three columns and at eight on a large screen", async () => {
     window.localStorage.setItem(COLUMNS_KEY, "1");
     installServer([brandView("alpha", {}, [item({ description: "one" })])]);
     render(<App />);
     await shown("alpha");
+    expect(screen.getByRole("list", { name: "Cards" }).style.columns).toBe("3"); // a remembered 1 is below what a large screen allows
     expect((screen.getByRole("button", { name: "Fewer columns" }) as HTMLButtonElement).disabled).toBe(true);
-    for (let n = 0; n < 7; n += 1) fireEvent.click(screen.getByRole("button", { name: "More columns" }));
+    for (let n = 0; n < 5; n += 1) fireEvent.click(screen.getByRole("button", { name: "More columns" }));
     expect(screen.getByRole("list", { name: "Cards" }).style.columns).toBe("8");
     expect((screen.getByRole("button", { name: "More columns" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("opens with the remembered number of columns, and the count follows the window until one is set", async () => {
-    window.localStorage.setItem(COLUMNS_KEY, "2");
+  it("stops the buttons at two columns on a tablet", async () => {
+    installServer([brandView("alpha", {}, [item({ description: "one" })])]);
+    watchingStage();
+    render(<App />);
+    await shown("alpha");
+    resizeStage(720);
+    expect(screen.getByRole("status", { name: "Columns shown" }).textContent).toBe("2");
+    expect((screen.getByRole("button", { name: "Fewer columns" }) as HTMLButtonElement).disabled).toBe(true);
+    for (let n = 0; n < 6; n += 1) fireEvent.click(screen.getByRole("button", { name: "More columns" }));
+    expect(screen.getByRole("list", { name: "Cards" }).style.columns).toBe("8");
+  });
+
+  it("has one column and no buttons on a phone, and gives the choice back on a wider stage", async () => {
+    window.localStorage.setItem(COLUMNS_KEY, "5");
+    installServer([brandView("alpha", {}, [item({ description: "one" })])]);
+    watchingStage();
+    render(<App />);
+    await shown("alpha");
+    resizeStage(327);
+    expect(screen.getByRole("list", { name: "Cards" }).style.columns).toBe("1");
+    expect(screen.queryByRole("button", { name: "More columns" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fewer columns" })).toBeNull();
+    expect(window.localStorage.getItem(COLUMNS_KEY)).toBe("5"); // narrowing is not a choice
+    resizeStage(1392);
+    expect(screen.getByRole("list", { name: "Cards" }).style.columns).toBe("5");
+    expect(screen.getByRole("status", { name: "Columns shown" }).textContent).toBe("5");
+  });
+
+  it("opens with the remembered number of columns, and the count follows the stage until one is set", async () => {
+    window.localStorage.setItem(COLUMNS_KEY, "4");
     installServer([brandView("alpha", {}, [item({ description: "one" })])]);
     render(<App />);
     await shown("alpha");
-    expect(screen.getByRole("list", { name: "Cards" }).style.columns).toBe("2");
+    expect(screen.getByRole("list", { name: "Cards" }).style.columns).toBe("4");
     cleanup();
     window.localStorage.clear();
+    watchingStage();
     render(<App />);
     await shown("alpha");
-    act(() => {
-      window.innerWidth = 1440;
-      window.dispatchEvent(new Event("resize"));
-    });
+    resizeStage(1392);
     expect(screen.getByRole("status", { name: "Columns shown" }).textContent).toBe("4");
-    window.innerWidth = 1024;
+    resizeStage(700);
+    expect(screen.getByRole("status", { name: "Columns shown" }).textContent).toBe("2");
+  });
+
+  it("holds a chosen count to the range of the screen, and gives it back when the screen is large again", async () => {
+    window.localStorage.setItem(COLUMNS_KEY, "2");
+    installServer([brandView("alpha", {}, [item({ description: "one" })])]);
+    watchingStage();
+    render(<App />);
+    await shown("alpha");
+    const columns = () => screen.getByRole("list", { name: "Cards" }).style.columns;
+    resizeStage(1392);
+    expect(columns()).toBe("3"); // a large screen holds at least three
+    expect(window.localStorage.getItem(COLUMNS_KEY)).toBe("2");
+    resizeStage(720);
+    expect(columns()).toBe("2");
   });
 
   it("shows no column buttons when there are no cards but the paste box", async () => {

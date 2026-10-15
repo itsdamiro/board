@@ -9,7 +9,7 @@ Work in progress: the code that reads a vault and reads and writes a Moodboard's
 ## What it will do
 
 - Pick a brand from the folders under `Brands/` in your vault, from the menu that is the page's title.
-- Show the brand's notes and its images together as cards, newest first by the note's `created` date or the image's date, in as many columns as the window has room for (or the number you set with the buttons in the corner), each picture keeping its own proportions.
+- Show the brand's notes and its images together as cards, newest first by the note's `created` date or the image's date, in as many columns as the stage has room for (or the number you set with the buttons in the corner: 3 to 8 on a large screen, 2 to 8 on a tablet, one column and no buttons on a phone), each picture keeping its own proportions.
 - Add an item: paste a screenshot (or drop an image file) onto the dashed box that is the first card, optionally paste a page address, type a one-line description, press Enter.
 - Store the image under `Board/<brand>/` in your vault with a thumbnail, and add the description as a block at the end of the brand's Moodboard note.
 
