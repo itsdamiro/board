@@ -89,9 +89,13 @@ export function toBase64(file: Blob): Promise<string> {
   });
 }
 
-/** Removes the item whose `key` the brand view gave; the server refuses it (409) if the block changed since it was shown. */
-export async function deleteItem(slug: string, key: string): Promise<void> {
-  await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}`, { method: "DELETE" });
+/**
+ * Removes the item whose `key` the brand view gave; the server refuses it (409) if the block changed since it was shown.
+ * Returns the server's warning when the block went but its image files stayed, else null.
+ */
+export async function deleteItem(slug: string, key: string): Promise<string | null> {
+  const answer = (await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}`, { method: "DELETE" })) as { warning?: unknown } | null;
+  return typeof answer?.warning === "string" ? answer.warning : null;
 }
 
 export async function addItem(slug: string, item: NewItem): Promise<Item> {

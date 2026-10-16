@@ -15,13 +15,15 @@ const ACTION = "rounded-md border border-border px-3 py-1.5 text-sm focus-visibl
 
 /**
  * Asks, then removes the items one after the other (two writes to one note at once would only meet the server's 409).
- * `onDone` is told the card keys of the items that went, and always runs: the server may have removed the block and still refused, when its image
- * files could not be removed, so the page asks it again whatever the answer was. The dialog belongs to the cards' list, not to
- * a card, so it stays up with its message while the list is read again.
+ * `onDone` is told the card keys of the items that went, and always runs, so the page asks the server again whatever the answer was.
+ * When the server removed a block but could not remove its image files it answers 200 with a warning: the items are gone, and the
+ * dialog stays up with the warning until it is closed. The dialog belongs to the cards' list, not to a card, so it stays up with
+ * its message while the list is read again.
  */
 export function ConfirmDelete({ slug, items, onDone, onClose }: { slug: string; items: PlacedItem[]; onDone: (removed: string[]) => void; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   function close() {
     if (!busy) onClose();
@@ -32,16 +34,19 @@ export function ConfirmDelete({ slug, items, onDone, onClose }: { slug: string; 
     setBusy(true);
     setProblem(null);
     const removed: string[] = [];
+    const warned = new Set<string>();
     try {
       for (const { key, item } of items) {
-        await deleteItem(slug, item.key);
+        const warning = await deleteItem(slug, item.key);
         removed.push(key);
+        if (warning !== null) warned.add(warning);
       }
-      onClose();
+      if (warned.size === 0) onClose();
     } catch (failure) {
       const reason = failure instanceof Error ? failure.message : "Something went wrong.";
       setProblem(items.length > 1 ? `${removed.length} of ${items.length} deleted. ${reason}` : reason);
     } finally {
+      if (warned.size > 0) setWarning([...warned].join(" "));
       setBusy(false);
       onDone(removed);
     }
@@ -70,13 +75,18 @@ export function ConfirmDelete({ slug, items, onDone, onClose }: { slug: string; 
               {problem}
             </p>
           )}
+          {warning !== null && (
+            <output className="text-sm">{warning}</output>
+          )}
           <div className="flex justify-end gap-2">
             <button type="button" onClick={close} disabled={busy} className={ACTION}>
-              Cancel
+              {warning !== null && problem === null ? "Close" : "Cancel"}
             </button>
-            <button type="button" onClick={confirm} disabled={busy} className={`${ACTION} border-destructive text-destructive hover:bg-destructive/10`}>
-              Delete
-            </button>
+            {(warning === null || problem !== null) && (
+              <button type="button" onClick={confirm} disabled={busy} className={`${ACTION} border-destructive text-destructive hover:bg-destructive/10`}>
+                Delete
+              </button>
+            )}
           </div>
         </div>
       </DialogContent>

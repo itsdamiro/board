@@ -88,7 +88,6 @@ def _status_of(err: Exception) -> HTTPStatus | None:
         (TimeoutError, HTTPStatus.REQUEST_TIMEOUT),
         (moodboard.BlockNotFound, HTTPStatus.CONFLICT),
         (moodboard.AmbiguousBlock, HTTPStatus.CONFLICT),
-        (items.FilesLeft, HTTPStatus.INTERNAL_SERVER_ERROR),
         (images.ImageRefused, HTTPStatus.UNPROCESSABLE_ENTITY),
         (items.ItemError, HTTPStatus.UNPROCESSABLE_ENTITY),
         (MoodboardError, HTTPStatus.UNPROCESSABLE_ENTITY),
@@ -196,8 +195,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.CREATED, items.add_item(self.server.vault, slug, description, source, image))
 
     def _route_delete(self, slug: str, key: str) -> None:
-        items.delete_item(self.server.vault, slug, key)
-        self._json(HTTPStatus.OK, {"deleted": key})
+        warning = items.delete_item(self.server.vault, slug, key)
+        self._json(HTTPStatus.OK, {"deleted": key} if warning is None else {"deleted": key, "warning": warning})
 
 
 class BoardServer(ThreadingHTTPServer):

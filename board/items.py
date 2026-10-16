@@ -27,10 +27,6 @@ class MissingMoodboard(ItemError):
     """The brand has no Moodboard note, and the app does not create one."""
 
 
-class FilesLeft(ItemError):
-    """The block was removed but its image files could not be."""
-
-
 def _url(slug: str, kind: str, block: Block) -> str:
     return f"/api/brands/{quote(slug, safe='')}/{kind}/{block.image_id}.{block.ext}"
 
@@ -103,12 +99,16 @@ def add_item(vault_path: str, slug: str, description: str, source: str | None, i
     return item_view(vault_path, slug, moodboard.parse(block)[0])
 
 
-def delete_item(vault_path: str, slug: str, key: str) -> None:
-    """Remove the block with this key (it must be unchanged since shown) and its image files."""
+FILES_LEFT = "the item was removed from the note but its image files could not be removed"
+
+
+def delete_item(vault_path: str, slug: str, key: str) -> str | None:
+    """Remove the block with this key (it must be unchanged since shown) and its image files. Returns a warning, never a path, if the block went but the files stayed."""
     path = _existing_moodboard(vault_path, slug)
     block = vault_io.delete_block(path, key)
     if block.image_id and not any(b.image_id == block.image_id and b.ext == block.ext for b in vault_io.read_blocks(path)):  # one image, two blocks
         try:
             images.remove(vault_path, slug, block.image_id, block.ext)
-        except (OSError, vault.VaultError) as err:
-            raise FilesLeft("the item was removed from the note but its image files could not be removed") from err
+        except (OSError, vault.VaultError):
+            return FILES_LEFT
+    return None

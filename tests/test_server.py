@@ -10,7 +10,7 @@ import threading
 import unittest
 from unittest import mock
 
-from board import items, moodboard, server, vault_io
+from board import images, items, moodboard, server, vault_io
 from tests.helpers import NOTE, VaultCase, make_image
 
 
@@ -470,6 +470,14 @@ class DeleteTest(ServerCase):
         self.assertEqual(self.call("GET", drop["image"])[0], 404)
         self.assertEqual(self.call("GET", keep["image"])[0], 200)
 
+    def test_files_that_stay_are_a_200_with_a_warning_and_no_path(self):
+        drop = self.add("drop", image=make_image())[1]
+        with mock.patch.object(images, "remove", side_effect=PermissionError(13, "denied", self.vault)):
+            status, body = self.json("DELETE", f"/api/brands/alpha/items/{drop['key']}")
+        self.assertEqual((status, body), (200, {"deleted": drop["key"], "warning": items.FILES_LEFT}))
+        self.assertNotIn(self.vault, json.dumps(body))
+        self.assertEqual(self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"], [])
+
     def test_a_key_that_matches_nothing_is_409_and_changes_nothing(self):
         self.add("keep", image=make_image())
         before = self.moodboard_text()
@@ -503,9 +511,9 @@ class FailureTest(ServerCase):
         self.assertNotIn(self.vault.encode(), body)
 
     def test_a_purposeful_error_keeps_its_message_and_status(self):
-        with mock.patch.object(items, "brand_view", side_effect=items.FilesLeft("files stayed")):
+        with mock.patch.object(items, "brand_view", side_effect=items.MissingMoodboard("no note")):
             status, body = self.json("GET", "/api/brands/alpha")
-        self.assertEqual((status, body), (500, {"error": "files stayed"}))
+        self.assertEqual((status, body), (409, {"error": "no note"}))
 
     def test_a_note_that_changed_while_writing_is_409_so_the_client_can_retry(self):
         with mock.patch.object(items, "add_item", side_effect=vault_io.NoteChanged("the note changed while it was being written")):

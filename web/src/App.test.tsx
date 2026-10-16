@@ -515,21 +515,26 @@ describe("the cards", () => {
     }
     const answer = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
 
-    it("reads the brand again when the server removed the block but could not remove its files, and keeps its message up", async () => {
+    it("reads the brand again when the server removed the block but could not remove its files, and keeps its warning up until closed", async () => {
       two();
+      const warning = "the item was removed from the note but its image files could not be removed";
       const inner = intercept((input, init) => {
         if (init?.method !== "DELETE") return undefined;
-        return inner(input, init).then(() => answer(500, { error: "the item was removed from the note but its image files could not be removed" })); // removed, then refused
+        return inner(input, init).then(() => answer(200, { deleted: "a", warning })); // removed, with a warning
       });
       render(<App />);
       await shown("alpha");
       fireEvent.click(screen.getByRole("button", { name: "Delete first" }));
       const dialog = await screen.findByRole("dialog");
       fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-      expect((await within(dialog).findByRole("alert")).textContent).toContain("image files could not be removed");
+      expect((await within(dialog).findByRole("status")).textContent).toContain("image files could not be removed");
+      expect(within(dialog).queryByRole("alert")).toBeNull(); // it is a warning, not a failure
       await waitFor(() => expect(screen.queryByText("first", { selector: "li p" })).toBeNull());
-      expect(screen.getByRole("alert").textContent).toContain("image files could not be removed"); // the question is still up, with the words
+      expect(within(dialog).getByRole("status").textContent).toContain("image files could not be removed"); // the dialog is still up, with the words
+      expect(within(dialog).queryByRole("button", { name: "Delete" })).toBeNull(); // nothing left to delete from it
       expect(screen.getByText("second", { selector: "li p" })).toBeTruthy();
+      fireEvent.click(within(dialog).getByText("Close", { selector: "button" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
 
     it("drops the picks at once when their deletion went through, without waiting for the brand to be read again", async () => {

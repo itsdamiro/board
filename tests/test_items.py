@@ -268,20 +268,22 @@ class DeleteItemTest(VaultCase):
         items.delete_item(self.vault, "alpha", self.drop["key"])
         self.assertNotIn("drop me", self.moodboard_text())
 
-    def test_when_the_files_cannot_be_removed_the_block_is_gone_and_the_error_says_so(self):
+    def test_when_the_files_cannot_be_removed_the_block_is_gone_and_a_warning_says_so(self):
         with mock.patch.object(images, "remove", side_effect=PermissionError(13, "denied", self.vault)):
-            with self.assertRaises(items.FilesLeft) as raised:
-                items.delete_item(self.vault, "alpha", self.drop["key"])
-        self.assertNotIn(self.vault, str(raised.exception))
+            warning = items.delete_item(self.vault, "alpha", self.drop["key"])
+        self.assertEqual(warning, items.FILES_LEFT)
+        self.assertNotIn(self.vault, warning)
         self.assertNotIn("drop me", self.moodboard_text())
+
+    def test_a_delete_that_removed_everything_has_no_warning(self):
+        self.assertIsNone(items.delete_item(self.vault, "alpha", self.drop["key"]))
 
     def test_a_brand_folder_under_board_that_is_a_link_is_reported_and_nothing_follows_it(self):
         real = os.path.join(self.vault, "Board", "alpha")
         moved = os.path.join(self.vault, "Board", "moved")
         os.rename(real, moved)
         os.symlink(moved, real)
-        with self.assertRaises(items.FilesLeft):
-            items.delete_item(self.vault, "alpha", self.drop["key"])
+        self.assertEqual(items.delete_item(self.vault, "alpha", self.drop["key"]), items.FILES_LEFT)
         self.assertEqual(len(os.listdir(moved)), 3)  # two originals, thumbs
 
     def test_two_identical_blocks_are_not_guessed_between(self):
