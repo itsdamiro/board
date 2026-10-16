@@ -310,15 +310,25 @@ class LookupTest(VaultCase):
     def found(self, title="A page", ext="jpg"):
         return lookup.Found(title, make_image(ext, (30, 20)) if ext else None, ext)
 
-    def add(self, description="", source=ADDRESS, image=None, **kwargs):
-        return items.add_item(self.vault, "alpha", description, source, image, **kwargs)
+    def add(self, description="", source=ADDRESS, image=None):
+        """Only the add, which looks nothing up."""
+        return items.add_item(self.vault, "alpha", description, source, image)
+
+    def add_and_look_up(self, description="", source=ADDRESS):
+        return items.look_up_item(self.vault, "alpha", self.add(description, source)["key"])
 
     def kept(self):
         return [f for f in self.board_files() if f.startswith("links/")]
 
-    def test_an_address_with_no_picture_is_looked_up_once_and_the_item_shows_the_result(self):
+    def test_an_add_looks_nothing_up(self):
         self.lookup.return_value = self.found()
         item = self.add("my words")
+        self.lookup.assert_not_called()
+        self.assertEqual((item["title"], item["preview"], self.kept()), (None, None, []))
+
+    def test_an_address_with_no_picture_is_looked_up_once_and_the_item_shows_the_result(self):
+        self.lookup.return_value = self.found()
+        item = self.add_and_look_up("my words")
         self.lookup.assert_called_once_with(self.ADDRESS)
         self.assertEqual(item["title"], "A page")
         name = links.name_of(self.ADDRESS)
@@ -327,72 +337,89 @@ class LookupTest(VaultCase):
 
     def test_the_note_holds_only_what_the_owner_typed(self):
         self.lookup.return_value = self.found("A page the owner never wrote")
-        self.add("my words")
+        self.add_and_look_up("my words")
         self.assertEqual(self.moodboard_text(), NOTE + f"my words\n[source]({self.ADDRESS})\n")
 
     def test_the_title_is_never_used_as_the_description(self):
         self.lookup.return_value = self.found("Their title")
-        item = self.add("")
+        item = self.add_and_look_up("")
         self.assertEqual((item["description"], item["title"]), ("", "Their title"))
         self.assertNotIn("Their title", self.moodboard_text())
 
     def test_the_brand_view_shows_the_title_and_preview_of_a_kept_lookup(self):
         self.lookup.return_value = self.found()
-        self.add()
+        self.add_and_look_up()
         (view,) = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
         self.assertEqual(view["title"], "A page")
         self.assertEqual(view["preview"]["width"], 30)
 
     def test_an_address_looked_up_before_is_not_asked_for_again(self):
         self.lookup.return_value = self.found()
-        self.add()
-        self.add("again")
+        self.add_and_look_up()
+        item = self.add_and_look_up("again")
         self.lookup.assert_called_once()
-        self.assertEqual(items.brand_view(self.vault, "alpha")["moodboard"]["items"][0]["title"], "A page")
+        self.assertEqual(item["title"], "A page")
 
-    def test_a_lookup_that_got_nothing_is_not_kept_and_is_not_repeated_inside_the_add(self):
-        item = self.add()
+    def test_a_lookup_that_got_nothing_is_not_kept(self):
+        item = self.add_and_look_up()
         self.lookup.assert_called_once()
         self.assertEqual((item["title"], item["preview"], self.kept()), (None, None, []))
 
-    def test_the_lookup_switched_off_asks_for_nothing(self):
-        item = self.add(look_up=False)
-        self.lookup.assert_not_called()
-        self.assertEqual((item["title"], item["preview"]), (None, None))
-
-    def test_an_item_with_its_own_picture_is_never_looked_up_and_shows_no_title(self):
+    def test_an_item_with_its_own_picture_cannot_be_looked_up_and_shows_no_title(self):
         self.lookup.return_value = self.found()
         item = self.add(image=make_image("png"))
+        with self.assertRaises(items.ItemError):
+            items.look_up_item(self.vault, "alpha", item["key"])
         self.lookup.assert_not_called()
         self.assertEqual((item["title"], item["preview"]), (None, None))
 
     def test_an_item_with_a_picture_shows_no_title_even_when_its_address_was_looked_up_for_another(self):
         self.lookup.return_value = self.found()
-        self.add()
+        self.add_and_look_up()
         self.add("with a picture", image=make_image("png"))
         views = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
         self.assertEqual([v["title"] for v in views], [None, "A page"])
 
-    def test_an_item_with_no_address_is_never_looked_up(self):
-        self.add("words only", source=None)
-        self.add("blank address", source="   ")
+    def test_an_item_with_no_address_cannot_be_looked_up(self):
+        for source in (None, "   "):
+            item = self.add(f"words only {source!r}", source=source)
+            with self.subTest(source=source), self.assertRaises(items.ItemError):
+                items.look_up_item(self.vault, "alpha", item["key"])
         self.lookup.assert_not_called()
 
-    def test_an_address_the_note_cannot_hold_is_refused_before_any_lookup(self):
+    def test_an_address_the_note_cannot_hold_is_refused_by_the_add(self):
         with self.assertRaises(MoodboardError):
             self.add(source="javascript:alert(1)")
         self.lookup.assert_not_called()
         self.assertEqual(self.board_files(), [])
 
+    def test_a_key_that_is_not_in_the_note_is_not_looked_up(self):
+        with self.assertRaises(moodboard.BlockNotFound):
+            items.look_up_item(self.vault, "alpha", "a" * 64)
+        self.lookup.assert_not_called()
+
+    def test_an_item_whose_text_was_added_twice_is_looked_up_once_for_both_copies(self):
+        self.lookup.return_value = self.found()
+        self.add("same")
+        item = items.look_up_item(self.vault, "alpha", self.add("same")["key"])
+        self.lookup.assert_called_once_with(self.ADDRESS)
+        self.assertEqual(item["title"], "A page")
+        self.assertEqual([v["title"] for v in items.brand_view(self.vault, "alpha")["moodboard"]["items"]], ["A page", "A page"])
+
+    def test_a_brand_with_no_moodboard_is_not_looked_up(self):
+        self.make_brand("beta", moodboard=None)
+        with self.assertRaises(items.MissingMoodboard):
+            items.look_up_item(self.vault, "beta", "a" * 64)
+
     def test_what_is_kept_is_named_by_the_address_as_the_note_holds_it(self):
         self.lookup.return_value = self.found()
-        self.add(source=f"  {self.ADDRESS}  ")
+        self.add_and_look_up(source=f"  {self.ADDRESS}  ")
         self.lookup.assert_called_once_with(self.ADDRESS)
         self.assertTrue(links.has(self.vault, "alpha", self.ADDRESS))
 
     def test_an_address_with_brackets_is_kept_under_the_form_the_note_holds_and_shows_and_is_deleted_with_its_item(self):
         self.lookup.return_value = self.found()
-        item = self.add(source="https://example.com/a_(b)")
+        item = self.add_and_look_up(source="https://example.com/a_(b)")
         held = "https://example.com/a_%28b%29"
         self.lookup.assert_called_once_with(held)
         self.assertEqual((item["source"], item["title"]), (held, "A page"))
@@ -400,50 +427,72 @@ class LookupTest(VaultCase):
         items.delete_item(self.vault, "alpha", item["key"])
         self.assertEqual(self.kept(), [])
 
-    def test_a_failure_to_keep_the_result_still_adds_the_item(self):
+    def test_a_failure_to_keep_the_result_leaves_the_item_as_it_was_added(self):
         self.lookup.return_value = self.found()
         with mock.patch.object(links, "store", side_effect=PermissionError(13, "denied", self.vault)), self.assertLogs("board.items", "WARNING") as logged:
-            item = self.add("still here")
+            item = self.add_and_look_up("still here")
         self.assertEqual(logged.output, ["WARNING:board.items:keeping an address lookup failed: PermissionError"])  # the kind, never a path or the address
         self.assertEqual((item["title"], item["description"]), (None, "still here"))
         self.assertIn("still here", self.moodboard_text())
 
-    def test_a_links_folder_that_is_a_link_still_adds_the_item_and_follows_nothing(self):
+    def test_a_links_folder_that_is_a_link_keeps_nothing_and_follows_nothing(self):
         elsewhere = os.path.join(os.path.dirname(self.vault), "elsewhere")
         os.makedirs(elsewhere)
         os.makedirs(os.path.join(self.vault, "Board", "alpha"))
         os.symlink(elsewhere, os.path.join(self.vault, "Board", "alpha", "links"))
         self.lookup.return_value = self.found()
         with self.assertLogs("board.items", "WARNING"):
-            item = self.add()
+            item = self.add_and_look_up()
         self.assertEqual((item["title"], os.listdir(elsewhere)), (None, []))
         self.assertIn(self.ADDRESS, self.moodboard_text())
 
-    def test_when_the_note_cannot_be_written_what_the_add_kept_is_taken_back(self):
-        self.lookup.return_value = self.found()
-        with mock.patch.object(vault_io, "append_block", side_effect=vault_io.NoteChanged("changed")), self.assertRaises(vault_io.NoteChanged):
-            self.add()
+    def test_an_item_deleted_while_the_address_was_asked_for_keeps_nothing(self):
+        added = self.add()
+
+        def asked(address):
+            items.delete_item(self.vault, "alpha", added["key"])
+            return self.found()
+
+        self.lookup.side_effect = asked
+        with self.assertRaises(moodboard.BlockNotFound):
+            items.look_up_item(self.vault, "alpha", added["key"])
         self.assertEqual(self.kept(), [])
 
-    def test_when_the_note_cannot_be_written_what_was_kept_before_stays(self):
+    def test_the_check_and_the_keeping_are_made_under_the_lock_a_delete_takes(self):
+        added = self.add()
         self.lookup.return_value = self.found()
-        self.add()
-        with mock.patch.object(vault_io, "append_block", side_effect=vault_io.NoteChanged("changed")), self.assertRaises(vault_io.NoteChanged):
-            self.add("second")
-        self.assertEqual(len(self.kept()), 2)
+        held = []
+        real_store = links.store
 
-    def test_a_failed_take_back_does_not_hide_the_error_that_caused_it(self):
+        def store(*args, **kwargs):
+            held.append(vault_io._lock.locked())
+            return real_store(*args, **kwargs)
+
+        with mock.patch.object(links, "store", side_effect=store):
+            items.look_up_item(self.vault, "alpha", added["key"])
+        self.assertEqual(held, [True])
+
+    def test_two_lookups_of_one_address_keep_it_once_and_both_answer_with_it(self):
+        first, second = self.add("one"), self.add("two")
         self.lookup.return_value = self.found()
-        with (
-            mock.patch.object(vault_io, "append_block", side_effect=vault_io.NoteChanged("changed")),
-            mock.patch.object(links, "remove", side_effect=PermissionError(13, "denied", self.vault)),
-            self.assertRaises(vault_io.NoteChanged),
-        ):
-            self.add()
+
+        calls = []
+
+        def asked(address):
+            calls.append(address)
+            if len(calls) == 1:
+                items.look_up_item(self.vault, "alpha", second["key"])  # the other item's lookup gets in while this one is being asked
+            return self.found()
+
+        self.lookup.side_effect = asked
+        with self.assertNoLogs("board.items", "WARNING"):
+            item = items.look_up_item(self.vault, "alpha", first["key"])
+        self.assertEqual(item["title"], "A page")
+        self.assertEqual(len(self.kept()), 2)  # the picture and the record, once
 
     def test_a_hand_edited_record_that_is_not_ours_shows_nothing(self):
         self.lookup.return_value = self.found()
-        self.add()
+        self.add_and_look_up()
         with open(os.path.join(self.vault, "Board", "alpha", "links", f"{links.name_of(self.ADDRESS)}.json"), "w", encoding="utf-8") as f:
             f.write('{"title": 5}')
         view = items.brand_view(self.vault, "alpha")["moodboard"]["items"][0]
@@ -458,7 +507,11 @@ class DeleteLookupTest(VaultCase):
     def setUp(self):
         super().setUp()
         self.lookup.return_value = lookup.Found("A page", make_image("jpg"), "jpg")
-        self.item = items.add_item(self.vault, "alpha", "one", self.ADDRESS, None)
+        self.item = self.add_looked_up("one", self.ADDRESS)
+
+    def add_looked_up(self, description, source, image=None):
+        added = items.add_item(self.vault, "alpha", description, source, image)
+        return added if image is not None else items.look_up_item(self.vault, "alpha", added["key"])
 
     def kept(self):
         return [f for f in self.board_files() if f.startswith("links/")]
@@ -469,7 +522,7 @@ class DeleteLookupTest(VaultCase):
         self.assertEqual(self.board_files(), [])
 
     def test_the_kept_lookup_stays_while_another_block_has_the_address(self):
-        other = items.add_item(self.vault, "alpha", "two", self.ADDRESS, None)
+        other = self.add_looked_up("two", self.ADDRESS)
         self.assertEqual(other["title"], "A page")
         items.delete_item(self.vault, "alpha", self.item["key"])
         self.assertEqual(len(self.kept()), 2)
@@ -486,7 +539,7 @@ class DeleteLookupTest(VaultCase):
 
     def test_another_address_keeps_its_lookup(self):
         self.lookup.return_value = lookup.Found("Other", None, None)
-        other = items.add_item(self.vault, "alpha", "", "https://other.example", None)
+        other = self.add_looked_up("", "https://other.example")
         items.delete_item(self.vault, "alpha", self.item["key"])
         self.assertEqual(self.kept(), [f"links/{links.name_of('https://other.example')}.json"])
         self.assertEqual(other["title"], "Other")

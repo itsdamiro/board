@@ -30,19 +30,30 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-/** Installs the fake as `fetch` and returns the brands (change them between steps) and every call made. `refuse` answers an add or a delete. */
+/** What the fake's lookup call does (ADR 008, amendment of 2026-10-17): wait for `gate`, then fail, or give the item `found`. */
+export interface LookupBehaviour {
+  gate: Promise<void> | null;
+  fail: boolean;
+  found: Partial<Item>;
+}
+
+/**
+ * Installs the fake as `fetch` and returns the brands (change them between steps), every call made and how a lookup call goes.
+ * `refuse` answers an add or a delete.
+ */
 export function installServer(brands: Brand[], refuse?: { status: number; error: string }) {
   const calls: Call[] = [];
+  const lookup: LookupBehaviour = { gate: null, fail: false, found: { title: "A page" } };
   const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const path = String(input);
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : null;
     calls.push({ method, path, body });
     if (method === "GET" && path === "/api/brands") return json(200, { brands: brands.map((b) => b.slug).sort() });
-    const found = /^\/api\/brands\/([^/]+)(\/items)?(?:\/([^/]+))?$/.exec(path);
+    const found = /^\/api\/brands\/([^/]+)(\/items)?(?:\/([^/]+))?(\/lookup)?$/.exec(path);
     const brand = brands.find((b) => b.slug === decodeURIComponent(found?.[1] ?? ""));
     if (found === null || brand === undefined) return json(404, { error: "no such brand" });
-    if (method === "DELETE" && found[2] !== undefined && found[3] !== undefined) {
+    if (method === "DELETE" && found[2] !== undefined && found[3] !== undefined && found[4] === undefined) {
       if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
       const key = decodeURIComponent(found[3]);
       const at = brand.moodboard.items.findIndex((i) => i.key === key);
@@ -50,19 +61,28 @@ export function installServer(brands: Brand[], refuse?: { status: number; error:
       brand.moodboard.items.splice(at, 1);
       return json(200, { deleted: key });
     }
+    if (method === "POST" && found[4] !== undefined && found[3] !== undefined) {
+      await lookup.gate;
+      const target = brand.moodboard.items.find((i) => i.key === decodeURIComponent(found[3] ?? ""));
+      if (target === undefined) return json(409, { error: "the item changed since it was shown" });
+      if (lookup.fail) return json(500, { error: "something went wrong" });
+      Object.assign(target, lookup.found);
+      return json(200, target);
+    }
     if (found[3] !== undefined) return json(404, { error: "no such route" });
     if (method === "GET" && found[2] === undefined) return json(200, brand);
     if (method === "POST" && found[2] !== undefined) {
       if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
       const sent = body as { description: string; source: string | null; image: string | null };
-      const added = item({ key: `k${calls.length}`, description: sent.description, text: sent.description, source: sent.source });
+      const kept = sent.source === null ? undefined : brand.moodboard.items.find((i) => i.source === sent.source && (i.title !== null || i.preview !== null)); // what is kept for an address shows on every item with it
+      const added = item({ key: `k${calls.length}`, description: sent.description, text: sent.description, source: sent.source, title: kept?.title ?? null, preview: kept?.preview ?? null });
       brand.moodboard.items.unshift(added);
       return json(201, added);
     }
     return json(404, { error: "no such route" });
   };
   vi.stubGlobal("fetch", vi.fn(handler));
-  return { calls };
+  return { calls, lookup };
 }
 
 /** A paste or a drop as the page sees it, with a generated file: jsdom has no ClipboardEvent or DataTransfer. */

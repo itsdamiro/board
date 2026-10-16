@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { getBrand, listBrands, type Brand } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { getBrand, listBrands, lookUpItem, type Brand, type Item } from "./api";
 import BrandSelect from "./BrandSelect";
 import Cards from "./Cards";
 import ColumnButtons from "./ColumnButtons";
@@ -19,6 +19,7 @@ export default function App() {
   const [brand, setBrand] = useState<Brand | null>(null);
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set()); // keys of the items whose address is being looked up
   const columns = useColumns();
 
   useEffect(() => {
@@ -49,23 +50,44 @@ export default function App() {
     };
   }, []);
 
+  // A read that a newer one has overtaken (the add's refresh, then the lookup's, or a change of brand) is let finish and ignored,
+  // not cancelled, so two refreshes close together never show as a failed request.
+  const latest = useRef(0);
   useEffect(() => {
     if (slug === null) return;
-    const controller = new AbortController();
-    getBrand(slug, controller.signal).then(
+    const mine = ++latest.current;
+    getBrand(slug).then(
       (view) => {
+        if (latest.current !== mine) return;
         setBrand(view);
         setError(null);
       },
       (failure: unknown) => {
-        if (!controller.signal.aborted) setError(message(failure));
+        if (latest.current === mine) setError(message(failure));
       },
     );
-    return () => controller.abort();
   }, [slug, reload]);
 
   const cards = brand === null ? [] : orderCards(brand);
   const refresh = () => setReload((n) => n + 1);
+
+  // The add is already done and shown; the lookup (up to eight seconds) goes on beside it, the box stays free, and a failure leaves the item as it is (ADR 008, amendment of 2026-10-17).
+  // An address the server already keeps shows its title and icon in the add's own answer, so nothing is asked for.
+  function added(item: Item, lookUp: boolean) {
+    refresh();
+    if (!lookUp || slug === null || item.title !== null || item.preview !== null) return;
+    setPending((now) => new Set(now).add(item.key));
+    lookUpItem(slug, item.key)
+      .catch(() => undefined)
+      .finally(() => {
+        setPending((now) => {
+          const next = new Set(now);
+          next.delete(item.key);
+          return next;
+        });
+        refresh();
+      });
+  }
 
   function choose(next: string) {
     if (next === slug) return;
@@ -109,7 +131,7 @@ export default function App() {
                 {brand.moodboard.problem}
               </p>
             )}
-            <Cards columns={columns} slug={brand.slug} cards={cards} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
+            <Cards columns={columns} slug={brand.slug} cards={cards} pending={pending} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={added} /> : undefined} />
           </>
         )}
       </main>

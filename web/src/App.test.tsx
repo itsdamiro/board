@@ -889,7 +889,7 @@ describe("adding an item", () => {
     expect(words.defaultPrevented).toBe(false);
     fireEvent.submit(field.closest("form")!);
     await waitFor(() => expect(screen.queryByText("https://example.com/page")).toBeNull());
-    expect(server.calls.find((c) => c.method === "POST")?.body).toEqual({ description: "", source: "https://example.com/page", image: null, lookup: true });
+    expect(server.calls.find((c) => c.method === "POST")?.body).toEqual({ description: "", source: "https://example.com/page", image: null });
   });
 
   it("keeps the address for the next item when asked, and drops it when it is removed", async () => {
@@ -1064,31 +1064,51 @@ describe("adding an item", () => {
     expect(server.calls.filter((c) => c.method === "POST")).toHaveLength(1);
   });
 
-  describe("the lookup of an address (ADR 008)", () => {
+  describe("the lookup of an address (ADR 008, amendment of 2026-10-17)", () => {
     const LABEL = "Look up the page's title and preview";
+    const WAITING = "Looking up the page…";
     async function withAddress() {
       const { server } = await ready();
       document.dispatchEvent(pasteEvent([], "https://example.com/page"));
       await screen.findByText("https://example.com/page");
       return server;
     }
-    const posted = (server: { calls: Array<{ method: string; body: unknown }> }) => server.calls.find((c) => c.method === "POST")?.body;
+    type Server = Awaited<ReturnType<typeof ready>>["server"];
+    const posts = (server: Server) => server.calls.filter((c) => c.method === "POST");
+    const lookups = (server: Server) => posts(server).filter((c) => c.path.endsWith("/lookup"));
+    const adds = (server: Server) => posts(server).filter((c) => c.path.endsWith("/items"));
+    const form = () => screen.getByLabelText("Description").closest("form")!;
+    /** Holds every lookup call until `release`, as a slow site would. */
+    function slow(server: Server) {
+      let release: () => void = () => {};
+      server.lookup.gate = new Promise<void>((done) => (release = done));
+      return release;
+    }
 
-    it("offers a checkbox, checked, for an address with no picture, and sends it as lookup", async () => {
-      const server = await withAddress();
+    it("offers a checkbox, checked, for an address with no picture", async () => {
+      await withAddress();
       expect((screen.getByLabelText(LABEL) as HTMLInputElement).checked).toBe(true);
-      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
-      await waitFor(() => expect(posted(server)).toBeDefined());
-      expect(posted(server)).toMatchObject({ source: "https://example.com/page", image: null, lookup: true });
     });
 
-    it("sends lookup false when unchecked, and remembers the choice for the next visit", async () => {
+    it("adds without asking for a lookup and then asks for it for the new item, by its key", async () => {
+      const server = await withAddress();
+      fireEvent.submit(form());
+      await screen.findByText("A page");
+      expect(adds(server)).toHaveLength(1);
+      expect(adds(server)[0]?.body).toEqual({ description: "", source: "https://example.com/page", image: null });
+      const [asked] = lookups(server);
+      expect(asked?.path).toMatch(/^\/api\/brands\/alpha\/items\/k\d+\/lookup$/);
+      expect(lookups(server)).toHaveLength(1);
+    });
+
+    it("sends no lookup call when unchecked, and remembers the choice for the next visit", async () => {
       const server = await withAddress();
       fireEvent.click(screen.getByLabelText(LABEL));
       expect(window.localStorage.getItem(LOOKUP_KEY)).toBe("off");
-      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
-      await waitFor(() => expect(posted(server)).toBeDefined());
-      expect(posted(server)).toMatchObject({ lookup: false });
+      fireEvent.submit(form());
+      await waitFor(() => expect(adds(server)).toHaveLength(1));
+      await act(async () => {});
+      expect(lookups(server)).toHaveLength(0);
       cleanup();
       installServer([brandView("alpha")]);
       render(<App />);
@@ -1098,14 +1118,15 @@ describe("adding an item", () => {
       expect((screen.getByLabelText(LABEL) as HTMLInputElement).checked).toBe(false);
     });
 
-    it("is not offered, and not sent, when a picture is queued", async () => {
+    it("is not offered, and not asked for, when a picture is queued", async () => {
       const server = await withAddress();
       document.dispatchEvent(pasteEvent([png()]));
       await screen.findByRole("img", { name: "Preview of the file to add" });
       expect(screen.queryByLabelText(LABEL)).toBeNull();
-      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
-      await waitFor(() => expect(posted(server)).toBeDefined());
-      expect(posted(server)).not.toHaveProperty("lookup");
+      fireEvent.submit(form());
+      await waitFor(() => expect(adds(server)).toHaveLength(1));
+      await act(async () => {});
+      expect(lookups(server)).toHaveLength(0);
     });
 
     it("is not offered with no address", async () => {
@@ -1114,36 +1135,124 @@ describe("adding an item", () => {
       expect(screen.queryByLabelText(LABEL)).toBeNull();
     });
 
-    it("says the page is being looked up while the add waits, and only when it is", async () => {
-      await withAddress();
-      const real = fetch as unknown as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-      let release: () => void = () => {};
-      const gate = new Promise<void>((done) => (release = done));
-      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === "POST") await gate;
-        return real(input, init);
-      }));
-      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
-      expect((await screen.findByRole("status")).textContent).toBe("Looking up the page…");
+    it("accepts Enter at once: the box is free before the lookup answers, and the card says it is looking", async () => {
+      const server = await withAddress();
+      const release = slow(server);
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "a reference" } });
+      fireEvent.submit(form());
+      await waitFor(() => expect(screen.getByRole("form", { name: "Add an item" }).textContent).toBe("paste / drop image here")); // the box took it and is empty again
+      expect(await screen.findByText(WAITING)).toBeTruthy();
+      expect(screen.getByText("a reference", { selector: "p" })).toBeTruthy(); // the card is already in the list
+      expect(screen.queryByText("A page")).toBeNull();
       release();
-      await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+      await screen.findByText("A page");
+      await waitFor(() => expect(screen.queryByText(WAITING)).toBeNull());
     });
 
-    it("does not say so when the lookup is unchecked", async () => {
-      await withAddress();
-      fireEvent.click(screen.getByLabelText(LABEL));
-      const real = fetch as unknown as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-      let release: () => void = () => {};
-      const gate = new Promise<void>((done) => (release = done));
-      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === "POST") await gate;
-        return real(input, init);
-      }));
-      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
-      await act(async () => {});
-      expect(screen.queryByRole("status")).toBeNull();
+    it("can add the next item while the first is still being looked up, and says so on both", async () => {
+      const server = await withAddress();
+      const release = slow(server);
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "first" } });
+      fireEvent.submit(form());
+      await screen.findByText("first", { selector: "p" });
+      document.dispatchEvent(pasteEvent([], "https://example.com/second"));
+      await screen.findByText("https://example.com/second", { selector: "span" });
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "second" } });
+      fireEvent.submit(form());
+      await screen.findByText("second", { selector: "p" });
+      await waitFor(() => expect(screen.getAllByText(WAITING)).toHaveLength(2));
       release();
+      await waitFor(() => expect(screen.queryAllByText(WAITING)).toHaveLength(0));
+      expect(lookups(server)).toHaveLength(2);
     });
+
+    it("leaves the item as it was added, with no error, when the lookup fails", async () => {
+      const server = await withAddress();
+      server.lookup.fail = true;
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "kept" } });
+      fireEvent.submit(form());
+      await screen.findByText("kept", { selector: "p" });
+      await waitFor(() => expect(lookups(server)).toHaveLength(1));
+      await waitFor(() => expect(screen.queryByText(WAITING)).toBeNull());
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("kept", { selector: "p" })).toBeTruthy();
+    });
+
+    it("says it only on the card being looked up, not on an older card that has an address", async () => {
+      const server = installServer([brandView("alpha", {}, [item({ key: "old", description: "older", text: "older", source: "https://old.example/" })])]);
+      render(<App />);
+      await shown("alpha");
+      slow(server);
+      document.dispatchEvent(pasteEvent([], "https://example.com/page"));
+      await screen.findByText("https://example.com/page");
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "newer" } });
+      fireEvent.submit(form());
+      await screen.findByText("newer", { selector: "p" });
+      const waiting = await screen.findAllByText(WAITING);
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]?.closest("li")?.textContent).toContain("newer");
+      expect(screen.getByText("older", { selector: "p" }).closest("li")?.textContent).not.toContain(WAITING);
+    });
+
+    it("asks for nothing, and says nothing, for an address the server already keeps a title for", async () => {
+      const kept = { key: "old", description: "older", text: "older", source: "https://example.com/page", title: "Kept title" };
+      const server = installServer([brandView("alpha", {}, [item(kept)])]);
+      render(<App />);
+      await shown("alpha");
+      document.dispatchEvent(pasteEvent([], "https://example.com/page"));
+      await screen.findByText("https://example.com/page", { selector: "span" });
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "newer" } });
+      fireEvent.submit(form());
+      await screen.findByText("newer", { selector: "p" });
+      await waitFor(() => expect(screen.getAllByText("Kept title")).toHaveLength(2)); // the new card has the title the server already keeps
+      expect(lookups(server)).toHaveLength(0);
+      expect(screen.queryByText(WAITING)).toBeNull();
+    });
+
+    it("asks for nothing for an address the server already keeps an icon for, with no title", async () => {
+      const kept = { key: "old", description: "older", text: "older", source: "https://example.com/page", preview: { url: "/api/brands/alpha/links/0123456789abcdef.png", width: 32, height: 32 } };
+      const server = installServer([brandView("alpha", {}, [item(kept)])]);
+      render(<App />);
+      await shown("alpha");
+      document.dispatchEvent(pasteEvent([], "https://example.com/page"));
+      await screen.findByText("https://example.com/page", { selector: "span" });
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "newer" } });
+      fireEvent.submit(form());
+      await screen.findByText("newer", { selector: "p" });
+      await waitFor(() => expect(screen.getAllByAltText("Site icon")).toHaveLength(2));
+      expect(lookups(server)).toHaveLength(0);
+      expect(screen.queryByText(WAITING)).toBeNull();
+    });
+
+    it("says nothing about a lookup when it is unchecked", async () => {
+      const server = await withAddress();
+      fireEvent.click(screen.getByLabelText(LABEL));
+      slow(server);
+      fireEvent.submit(form());
+      await act(async () => {});
+      expect(screen.queryByText(WAITING)).toBeNull();
+    });
+  });
+
+  it("ignores a read of the brand that was left, even when it answers after the new brand's", async () => {
+    const server = installServer([brandView("alpha", {}, [item({ key: "a", description: "from alpha", text: "from alpha" })]), brandView("beta", {}, [item({ key: "b", description: "from beta", text: "from beta" })])]);
+    const real = fetch as unknown as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((done) => (release = done));
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const answer = await real(input, init);
+      if (String(input) === "/api/brands/alpha") await gate; // alpha's answer is held until beta's has been shown
+      return answer;
+    }));
+    render(<App />);
+    await screen.findByRole("button", { name: /^Brand/ });
+    await choose("beta");
+    await screen.findByText("from beta", { selector: "p" });
+    release();
+    await act(async () => {});
+    expect(screen.queryByText("from alpha")).toBeNull();
+    expect(screen.getByText("from beta", { selector: "p" })).toBeTruthy();
+    expect(server.calls.filter((c) => c.path === "/api/brands/alpha")).toHaveLength(1);
   });
 
   it("does not carry a queued image to another brand", async () => {

@@ -540,7 +540,7 @@ class FailureTest(ServerCase):
 
 
 class LookupRouteTest(ServerCase):
-    """ADR 008 through the API: the `lookup` flag, the item's title and preview, and the preview's route. The fetch itself is `self.lookup`."""
+    """ADR 008 through the API: the add that looks nothing up, the lookup call, the item's title and preview, and the preview's route. The fetch itself is `self.lookup`."""
 
     ADDRESS = "https://example.com/page"
 
@@ -548,35 +548,91 @@ class LookupRouteTest(ServerCase):
         super().setUp()
         self.lookup.return_value = lookup.Found("A page", make_image("png", (900, 450)), "png")
 
-    def post(self, **extra):
+    def add_address(self, **extra):
         return self.json("POST", "/api/brands/alpha/items", {"description": "", "source": self.ADDRESS, **extra})
 
-    def test_an_address_is_looked_up_by_default_and_the_item_has_a_title_and_a_preview(self):
+    def look_up(self, key, slug="alpha"):
+        return self.json("POST", f"/api/brands/{slug}/items/{key}/lookup", {})
+
+    def post(self):
+        """An address added and then looked up: the lookup's answer."""
+        _, added = self.add_address()
+        return self.look_up(added["key"])
+
+    def test_an_add_looks_nothing_up_and_answers_with_no_title_and_no_preview(self):
+        status, item = self.add_address()
+        self.assertEqual((status, item["title"], item["preview"]), (201, None, None))
+        self.lookup.assert_not_called()
+        self.assertEqual(self.board_files(), [])
+
+    def test_a_body_that_still_has_lookup_is_added_and_the_field_is_ignored(self):
+        for value in (True, False, "false", 0, None):
+            with self.subTest(value=value):
+                self.assertEqual(self.add_address(lookup=value)[0], 201)
+        self.lookup.assert_not_called()
+
+    def test_the_lookup_call_gives_the_item_a_title_and_a_preview_and_keeps_them(self):
         status, item = self.post()
-        self.assertEqual((status, item["title"]), (201, "A page"))
+        self.assertEqual((status, item["title"]), (200, "A page"))
         self.lookup.assert_called_once_with(self.ADDRESS)
         self.assertEqual(self.call("GET", item["preview"]["url"])[0], 200)
         self.assertEqual(self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"][0]["title"], "A page")
 
-    def test_lookup_false_asks_for_nothing(self):
-        status, item = self.post(lookup=False)
-        self.assertEqual((status, item["title"], item["preview"]), (201, None, None))
+    def test_the_lookup_call_does_not_change_the_note(self):
+        _, added = self.add_address()
+        before = self.moodboard_text()
+        self.look_up(added["key"])
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_lookup_call_for_an_address_already_kept_asks_for_nothing_and_answers_with_it(self):
+        self.post()
+        self.lookup.reset_mock()
+        _, added = self.json("POST", "/api/brands/alpha/items", {"description": "again", "source": self.ADDRESS})
+        status, item = self.look_up(added["key"])
+        self.assertEqual((status, item["title"]), (200, "A page"))
         self.lookup.assert_not_called()
 
-    def test_lookup_true_is_the_same_as_leaving_it_out(self):
-        self.assertEqual(self.post(lookup=True)[1]["title"], "A page")
-
-    def test_lookup_that_is_not_true_or_false_is_400_and_writes_nothing(self):
-        for value in ("false", "no", 0, 1, None, [], {}):
-            with self.subTest(value=value):
-                self.assertEqual(self.post(lookup=value)[0], 400)
-        self.assertEqual(self.moodboard_text(), NOTE)
-        self.lookup.assert_not_called()
-
-    def test_a_failed_lookup_is_still_a_201_with_nothing_shown(self):
+    def test_a_failed_lookup_is_still_a_200_with_nothing_shown(self):
         self.lookup.return_value = lookup.Found()
         status, item = self.post()
-        self.assertEqual((status, item["title"], item["preview"]), (201, None, None))
+        self.assertEqual((status, item["title"], item["preview"]), (200, None, None))
+
+    def test_an_item_with_a_picture_or_with_no_address_cannot_be_looked_up(self):
+        _, with_picture = self.add(source=self.ADDRESS, image=make_image("png"))
+        _, words = self.add("only words")
+        for item in (with_picture, words):
+            with self.subTest(key=item["key"]):
+                self.assertEqual(self.look_up(item["key"])[0], 422)
+        self.lookup.assert_not_called()
+
+    def test_a_key_that_is_not_in_the_note_is_409_and_a_key_that_is_not_a_key_is_404(self):
+        self.assertEqual(self.look_up("a" * 64)[0], 409)
+        for key in ("a" * 63, "A" * 64, "x"):
+            with self.subTest(key=key):
+                self.assertEqual(self.look_up(key)[0], 404)
+        self.lookup.assert_not_called()
+
+    def test_a_brand_that_is_not_there_is_404_and_one_with_no_moodboard_is_409(self):
+        self.assertEqual(self.look_up("a" * 64, slug="nobody")[0], 404)
+        self.make_brand("beta", moodboard=None)
+        self.assertEqual(self.look_up("a" * 64, slug="beta")[0], 409)
+
+    def test_an_item_deleted_while_the_lookup_was_asking_keeps_nothing(self):
+        _, added = self.add_address()
+
+        def asked(address):
+            self.assertEqual(self.json("DELETE", f"/api/brands/alpha/items/{added['key']}")[0], 200)
+            return lookup.Found("A page", make_image("png"), "png")
+
+        self.lookup.side_effect = asked
+        self.assertEqual(self.look_up(added["key"])[0], 409)
+        self.assertEqual(self.board_files(), [])
+
+    def test_a_lookup_call_needs_the_servers_own_origin(self):
+        _, added = self.add_address()
+        self.assertEqual(self.call("POST", f"/api/brands/alpha/items/{added['key']}/lookup", {}, origin=None)[0], 403)
+        self.assertEqual(self.call("POST", f"/api/brands/alpha/items/{added['key']}/lookup", {}, origin="http://evil.example")[0], 403)
+        self.lookup.assert_not_called()
 
     def test_the_preview_is_served_with_its_type_and_the_safe_headers(self):
         _, item = self.post()

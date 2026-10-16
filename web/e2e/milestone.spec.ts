@@ -225,12 +225,15 @@ for (const scheme of ["light", "dark"] as const) {
       await expect(checkbox).toBeChecked();
       await checkbox.uncheck(); // so the server makes no request: no test reaches the internet
       await page.getByLabel("Description").fill("a reference");
+      const asked: string[] = [];
+      page.on("request", (request) => request.url().endsWith("/lookup") && asked.push(request.url()));
       const sent = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/items"));
       await page.getByLabel("Description").press("Enter");
-      expect((await sent).postDataJSON()).toEqual({ description: "a reference", source: address, image: null, lookup: false });
+      expect((await sent).postDataJSON()).toEqual({ description: "a reference", source: address, image: null });
       await expect(page.getByRole("link", { name: address })).toBeVisible();
       expect(moodboard(board)).toMatch(/\na reference\n\[source\]\(https:\/\/example\.com\/looked-up\)\n$/);
       expect(linkFiles(board)).toEqual([]);
+      expect(asked).toEqual([]); // unchecked: no lookup call either
 
       // The owner's choice is kept for the next address, across a reload.
       await page.reload();
@@ -264,8 +267,10 @@ for (const scheme of ["light", "dark"] as const) {
       await pasteText(page, "http://127.0.0.1/private"); // refused by the server before any connection (ADR 008, decision 3)
       await expect(page.getByLabel("Look up the page's title and preview")).toBeChecked();
       await page.getByLabel("Description").fill("a local page");
+      const asked = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/lookup"));
       await page.getByLabel("Description").press("Enter");
       await expect(page.getByRole("link", { name: "http://127.0.0.1/private" })).toBeVisible();
+      await asked; // the page did ask, and the server refused it quietly
       await expect(page.getByRole("alert")).toHaveCount(0);
       expect(moodboard(board)).toMatch(/\na local page\n\[source\]\(http:\/\/127\.0\.0\.1\/private\)\n$/);
       expect(linkFiles(board)).toEqual([]);

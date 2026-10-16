@@ -13,6 +13,7 @@ import os
 import shutil
 import tempfile
 import threading
+from collections.abc import Iterator
 
 from board import moodboard
 from board.moodboard import Block, MoodboardError
@@ -36,6 +37,21 @@ def _read(path: str) -> tuple[bytes, str]:
 def read_blocks(path: str) -> list[Block]:
     """The items of the note in file order. FileNotFoundError if it is missing; MoodboardError if it cannot be read safely."""
     return moodboard.parse(_read(path)[1])
+
+
+def block_with_key(path: str, key: str) -> Block:
+    """The block of the note with this key. Raises BlockNotFound. A text added more than once gives the first: the copies share an address, so one lookup serves them all."""
+    found = [b for b in read_blocks(path) if b.key == key]
+    if not found:
+        raise moodboard.BlockNotFound(moodboard.NOT_FOUND)
+    return found[0]
+
+
+@contextlib.contextmanager
+def hold_block(path: str, key: str) -> Iterator[Block]:
+    """Hold the write lock and give the block with this key, found again under it: an add or a delete in this process cannot change the note until the caller is done. Raises BlockNotFound."""
+    with _lock:
+        yield block_with_key(path, key)
 
 
 def append_block(path: str, block: str) -> None:

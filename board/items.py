@@ -1,17 +1,16 @@
-"""What the API does with items: show a brand with its items, add one, delete one (ADR 001, decisions 3, 4, 5, 8).
+"""What the API does with items: show a brand with its items, add one, look an address up, delete one (ADR 001, decisions 3, 4, 5, 8).
 
 Every function takes the vault path `find_vault` checked and a slug, and gets the Moodboard's path from
 vault.moodboard_path, which refuses any slug that is not a brand folder and any Moodboard that is a link. The Moodboard note
 must already exist: the app writes no text of its own into a note, so it does not create one (MissingMoodboard).
 An add validates everything, makes the thumbnail, and only then writes: the files first, then the block, and the files are
-taken back if the block cannot be written. An address with no image is looked up once first (ADR 008) and what is found is kept
-beside the images, never in the note; a failed lookup or a failed keeping only means the item is added as it is. A delete removes
-the block first (the one write that decides), then its files.
+taken back if the block cannot be written. An add never looks anything up: an address with no image is looked up by a call of its
+own (ADR 008, amendment of 2026-10-17) and what is found is kept beside the images, never in the note; a failed lookup or a
+failed keeping only means the item stays as it was added. A delete removes the block first (the one write that decides), then its files.
 """
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import logging
 import os
@@ -91,11 +90,10 @@ def _existing_moodboard(vault_path: str, slug: str) -> str:
     return path
 
 
-def add_item(vault_path: str, slug: str, description: str, source: str | None, image: bytes | None, look_up: bool = True) -> dict:
+def add_item(vault_path: str, slug: str, description: str, source: str | None, image: bytes | None) -> dict:
     """Add an item at the end of the brand's Moodboard and return its view. Raises ItemError, ImageRefused, MoodboardError.
 
-    `look_up` asks for the address's title and preview (ADR 008, decision 1): only for an address with no image, and not again
-    for one already kept. It can wait up to the lookup's eight seconds and never fails the add.
+    It looks nothing up (ADR 008, amendment of 2026-10-17): `look_up_item` does that, and the add answers at once.
     """
     path = _existing_moodboard(vault_path, slug)
     description, source = description.strip(), (source or "").strip() or None
@@ -103,34 +101,45 @@ def add_item(vault_path: str, slug: str, description: str, source: str | None, i
         raise ItemError("the description or the address is too long")
     ext = images.sniff(image) if image is not None else None
     placeholder = "2000-01-01-0000-0000" if image is not None else None
-    checked = moodboard.format_block(description, placeholder, ext, source)  # validates before anything is written: it refuses a bad address
+    moodboard.format_block(description, placeholder, ext, source)  # validates before anything is written: it refuses a bad address
     image_id = None
     if image is not None:
         image_id = images.store(vault_path, slug, image, ext, images.thumbnail(image, ext))
-    address = moodboard.parse(checked)[0].source if image is None else None  # as the note will hold it: the key of what is kept
-    kept = _look_up(vault_path, slug, address) if look_up and address else None
     try:
         block = moodboard.format_block(description, image_id, ext, source)
         vault_io.append_block(path, block)
     except BaseException:
         if image_id:
             images.remove(vault_path, slug, image_id, ext)
-        if kept:
-            with contextlib.suppress(OSError, vault.VaultError):
-                links.remove(vault_path, slug, kept)
         raise
     return item_view(vault_path, slug, moodboard.parse(block)[0])
 
 
-def _look_up(vault_path: str, slug: str, address: str) -> str | None:
-    """Ask for the address's title and preview and keep what comes. The address if files were written for it (so a failed add can take them back), else None."""
+def look_up_item(vault_path: str, slug: str, key: str) -> dict:
+    """Ask for the title and preview of an item's address, keep what comes, and return the item's view (ADR 008, amendment of 2026-10-17).
+
+    Only for an item with an address and no picture of its own, still in the note and unchanged. An address already kept is not
+    asked for again. It can wait up to the lookup's eight seconds and never fails on what the site does. What is found is kept
+    only if the item is still there once the answer is in: the check and the keeping happen under the lock a delete takes.
+    """
+    path = _existing_moodboard(vault_path, slug)
+    block = vault_io.block_with_key(path, key)
+    if not block.source or block.image_id:
+        raise ItemError("only an item with an address and no picture of its own can be looked up")
+    if not links.has(vault_path, slug, block.source):
+        found = lookup.lookup(block.source)
+        with vault_io.hold_block(path, key) as block:  # the item went or changed while the page was asked: nothing is kept
+            _keep(vault_path, slug, block.source, found)
+    return item_view(vault_path, slug, block)
+
+
+def _keep(vault_path: str, slug: str, address: str, found: lookup.Found) -> None:
+    """Keep what a lookup found, unless another lookup of the address got there first."""
     try:
-        if links.has(vault_path, slug, address):
-            return None
-        return address if links.store(vault_path, slug, address, lookup.lookup(address)) else None
-    except (OSError, vault.VaultError) as err:  # decision 9: the item is added as it is; the kind of failure only, never a path
+        if not links.has(vault_path, slug, address):
+            links.store(vault_path, slug, address, found)
+    except (OSError, vault.VaultError) as err:  # decision 9: the item stays as it is; the kind of failure only, never a path
         log.warning("keeping an address lookup failed: %s", type(err).__name__)
-        return None
 
 
 FILES_LEFT = "the item was removed from the note but its image files could not be removed"

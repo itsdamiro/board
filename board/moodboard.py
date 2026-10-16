@@ -153,11 +153,14 @@ def append(text: str, block: str) -> str:
     return out + block.replace("\n", eol) + eol
 
 
+NOT_FOUND = "no block has this text now: it was changed or removed since it was shown"
+
+
 def remove(text: str, key: str) -> tuple[str, Block]:
     """`text` without the one block whose key this is, and that block. Raises BlockNotFound or AmbiguousBlock."""
     found = [b for b in parse(text) if b.key == key]
     if not found:
-        raise BlockNotFound("no block has this text now: it was changed or removed since it was shown")
+        raise BlockNotFound(NOT_FOUND)
     if len(found) > 1:
         raise AmbiguousBlock(f"{len(found)} blocks have exactly this text; remove the extra copies by hand first")
     block = found[0]

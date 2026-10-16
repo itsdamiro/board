@@ -180,3 +180,14 @@ A review of the commits since the layout (xhigh, 13 findings) found these; the o
 1. **The icon is drawn at 32 by 32 CSS pixels** (`object-contain`, lazy), at the start of the text area, with the title beside it, and not at the top of the card. Its alternative text is empty when the title is shown (the title says it) and "Site icon" when there is no title.
 2. **Without a title the icon sits above the address** in the same place. An item with a picture of its own still shows no icon (unchanged).
 3. **Nothing else changes:** no link, no viewer, plain text for the title, the title muted and apart from the owner's words. The API's `preview.width` and `height` are still sent and are no longer used for the layout.
+
+## Amendment (2026-10-17): the add does not wait for the lookup, and the card says it is looking
+
+**Accepted by the owner on 2026-10-17, with the amendment to ADR 008 of the same date ("Accepted. Build it.").**
+
+[ADR 008](008-the-server-looks-up-an-address-once-under-strict-limits.md), amendment of the same date, moves the lookup out of the add into a call of its own. Points 3 and 4 of the amendment "the address lookup on the page" change, and nothing else on the page:
+
+1. **The add no longer carries `lookup`.** The box sends the item as it always did. If the checkbox is checked and the item has an address and no picture, the page then sends the lookup call for the new item's key, without waiting for it: the box is empty and ready for the next item as soon as the add is answered. If the add's answer already carries a title or an icon (the server keeps one for that address), the page sends no call.
+2. **The card says it is looking.** While a lookup call is out for an item, its card shows "Looking up the page…" (muted, small, in a status region) between the owner's words and the address, in place of the line the box showed. When the call answers, the page reads the brand again and the card shows the title and icon. If the call fails, the line goes and the card stays as it was added, with no message: the item is not wrong, only bare.
+3. **The page reads the brand again after both steps.** A read that a newer one overtakes (the add's, then the lookup's, or a change of brand) is let finish and its answer ignored, rather than cancelled, so the two reads never show as a failed request.
+4. **Known cost:** the page remembers what it is looking up only until it is closed. A lookup the server was still making is finished and kept anyway (ADR 008, amendment), and the page shows it the next time the brand is opened.

@@ -13,7 +13,7 @@ import { itemWords, type Brand, type Item, type Panel } from "./api";
 
 const LINK = "focus-visible:outline-2 focus-visible:outline-ring";
 
-function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) => void }) {
+function ItemCard({ item, pending, onView }: { item: Item; pending: boolean; onView: (opener: HTMLElement) => void }) {
   const words = item.description !== "" ? item.description : item.source === null && item.image === null ? item.text : "";
   const icon = item.image === null ? item.preview : null;
   return (
@@ -43,6 +43,7 @@ function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) 
               {item.title !== null && <p className="text-xs text-muted-foreground">{item.title}</p>}
             </div>
           )}
+          {pending && <output className="text-xs text-muted-foreground">Looking up the page…</output>}
           {item.source !== null && (
             <a href={item.source} target="_blank" rel="noopener noreferrer" className={`break-all font-mono text-xs text-muted-foreground underline ${LINK}`}>
               {item.source}
@@ -78,17 +79,18 @@ function HubCard({ brand }: { brand: Brand }) {
   );
 }
 
-function Body({ card, onView }: { card: Card; onView: (opener: HTMLElement) => void }) {
+function Body({ card, pending, onView }: { card: Card; pending: ReadonlySet<string>; onView: (opener: HTMLElement) => void }) {
   if (card.kind === "hub") return <HubCard brand={card.brand} />;
   if (card.kind === "note") return <NoteCard panel={card.panel} />;
-  return <ItemCard item={card.item} onView={onView} />;
+  return <ItemCard item={card.item} pending={pending.has(card.item.key)} onView={onView} />;
 }
 
 /**
  * `adder` is the box that takes a pasted or dropped image; it is the first card, before the brand's own. `cards` are in the order
- * `orderCards` gives. `onChanged` is told after a delete was tried, so the page reads the brand again.
+ * `orderCards` gives. `onChanged` is told after a delete was tried, so the page reads the brand again. `pending` holds the keys of
+ * the items whose address is being looked up (ADR 008, amendment of 2026-10-17), which say so.
  */
-export default function Cards({ slug, cards, adder, columns, onChanged }: { slug: string; cards: Card[]; adder?: ReactNode; columns: Columns; onChanged: () => void }) {
+export default function Cards({ slug, cards, adder, columns, pending, onChanged }: { slug: string; cards: Card[]; adder?: ReactNode; columns: Columns; pending: ReadonlySet<string>; onChanged: () => void }) {
   // The viewer steps through the images in the order of the cards, so previous and next are the neighbours the owner sees.
   const placed = itemCards(cards);
   const gallery = placed.filter((entry) => entry.item.image !== null);
@@ -148,7 +150,7 @@ export default function Cards({ slug, cards, adder, columns, onChanged }: { slug
               {...(card.kind === "item" ? shiftPick(card.key) : {})}
               className={`group relative mb-4 break-inside-avoid overflow-hidden rounded-lg border bg-card text-card-foreground ${isPicked ? "border-ring ring-2 ring-ring" : "border-border"}`}
             >
-              <Body card={card} onView={(from) => { opener.current = from; setViewing(card.key); }} />
+              <Body card={card} pending={pending} onView={(from) => { opener.current = from; setViewing(card.key); }} />
               {isPicked && (
                 <span aria-hidden="true" className="pointer-events-none absolute top-2 left-2 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
                   <Check className="size-4" />

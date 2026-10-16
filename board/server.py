@@ -9,7 +9,8 @@ Routes (all under /api; errors are `{"error": "<plain text>"}`):
   GET    /api/brands/<slug>                   the brand: badges, summary, panels, and Moodboard items, newest first
   GET    /api/brands/<slug>/images/<id>.<ext> the original image;  .../thumbs/<id>.<ext> its thumbnail
   GET    /api/brands/<slug>/links/<hash>.<ext> the thumbnail of an address's preview (ADR 008)
-  POST   /api/brands/<slug>/items             {"description", "source", "image"(base64), "lookup"} -> the new item, 201
+  POST   /api/brands/<slug>/items             {"description", "source", "image"(base64)} -> the new item, 201
+  POST   /api/brands/<slug>/items/<key>/lookup  looks the item's address up (up to 8 s) -> the item, 200
   DELETE /api/brands/<slug>/items/<key>       removes the item whose key the brand view gave
 
 Everything else that is read (GET, HEAD) is the built page, `web/dist/`: `/` is its index.html, other addresses are its files.
@@ -49,6 +50,7 @@ ROUTES = [
     ("GET", re.compile(rf"/api/brands/{_BRAND}/{_IMAGE}"), "image"),
     ("GET", re.compile(rf"/api/brands/{_BRAND}/{_LINK}"), "link"),
     ("POST", re.compile(rf"/api/brands/{_BRAND}/items"), "add"),
+    ("POST", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}/lookup"), "lookup"),
     ("DELETE", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}"), "delete"),
     ("GET", re.compile(r"/(?!api/)(?P<name>.*)"), "page"),  # last, and never under /api: an unknown API address stays a JSON 404
 ]
@@ -203,10 +205,10 @@ class Handler(BaseHTTPRequestHandler):
             image = base64.b64decode(picture, validate=True) if picture is not None else None
         except binascii.Error as err:
             raise Failure(HTTPStatus.BAD_REQUEST, "the image is not valid base64") from err
-        look_up = data.get("lookup", True)
-        if not isinstance(look_up, bool):
-            raise Failure(HTTPStatus.BAD_REQUEST, "lookup must be true or false")
-        self._json(HTTPStatus.CREATED, items.add_item(self.server.vault, slug, description, source, image, look_up))
+        self._json(HTTPStatus.CREATED, items.add_item(self.server.vault, slug, description, source, image))
+
+    def _route_lookup(self, slug: str, key: str) -> None:
+        self._json(HTTPStatus.OK, items.look_up_item(self.server.vault, slug, key))
 
     def _route_delete(self, slug: str, key: str) -> None:
         warning = items.delete_item(self.server.vault, slug, key)

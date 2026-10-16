@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link2, X } from "lucide-react";
-import { addItem } from "./api";
+import { addItem, type Item } from "./api";
 import { webAddress } from "./address";
 import { readLookup, writeLookup } from "./lookup";
 
 // Adds an item (ADR 001, decision 5; ADR 002, amendment on the cards): an image pasted or dropped on the page, an address
 // pasted or typed with the link button, a one-line description under the picture, and Enter. Empty, it is a dashed box that says where to paste. The page keeps no copy of
-// the vault: when the server has taken the item, the parent asks it again.
+// the vault: when the server has taken the item, the parent asks it again, and looks the address up if it was asked to (ADR 008, amendment of 2026-10-17):
+// the add never waits for that, so the box is free for the next item at once.
 
 interface Queued {
   file: File;
@@ -19,11 +20,11 @@ function images(files: FileList | null | undefined): File[] {
   return Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
 }
 
-export default function Composer({ slug, onAdded }: { slug: string; onAdded: () => void }) {
+export default function Composer({ slug, onAdded }: { slug: string; onAdded: (item: Item, lookUp: boolean) => void }) {
   const [description, setDescription] = useState("");
   const [source, setSource] = useState<string | null>(null);
   const [keepSource, setKeepSource] = useState(false);
-  const [lookup, setLookup] = useState(readLookup); // ADR 008: the server looks up an address with no picture, unless unchecked
+  const [lookup, setLookup] = useState(readLookup); // ADR 008: an address with no picture is looked up after it is added, unless unchecked
   const [typing, setTyping] = useState(false); // the field for an address typed, opened by the link button
   const [typed, setTyped] = useState("");
   const [queue, setQueue] = useState<Queued[]>([]);
@@ -124,8 +125,9 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
     setBusy(true);
     setError(null);
     const sent = queue[0]; // by identity: the picture may be removed while it is on its way, and the next one must stay
+    let added: Item;
     try {
-      await addItem(slug, { description, source, image: sent?.file ?? null, lookup: lookingUp ? lookup : undefined });
+      added = await addItem(slug, { description, source, image: sent?.file ?? null });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The item could not be added.");
       setBusy(false);
@@ -135,7 +137,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
     if (!keepSource) setSource(null);
     if (sent !== undefined) drop(sent);
     setBusy(false);
-    onAdded();
+    onAdded(added, lookingUp && lookup);
     input.current?.focus();
   }
 
@@ -222,9 +224,6 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
               />
               Look up the page&apos;s title and preview
             </label>
-          )}
-          {busy && lookingUp && lookup && (
-            <output className="text-sm text-muted-foreground">Looking up the page…</output>
           )}
         </div>
       )}

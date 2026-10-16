@@ -47,7 +47,6 @@ export interface NewItem {
   description: string;
   source: string | null;
   image: File | null;
-  lookup?: boolean; // whether the server may look the address up (ADR 008); left out (undefined is not serialised), the server's default (true) applies
 }
 
 export class ApiError extends Error {}
@@ -81,8 +80,8 @@ export async function listBrands(signal?: AbortSignal): Promise<string[]> {
   return body.brands;
 }
 
-export async function getBrand(slug: string, signal?: AbortSignal): Promise<Brand> {
-  return (await call(`/api/brands/${encodeURIComponent(slug)}`, undefined, signal)) as Brand;
+export async function getBrand(slug: string): Promise<Brand> {
+  return (await call(`/api/brands/${encodeURIComponent(slug)}`)) as Brand;
 }
 
 /** The bytes of a file as base64 text, which is how the API takes an image. */
@@ -112,7 +111,15 @@ export async function addItem(slug: string, item: NewItem): Promise<Item> {
   const init = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ description: item.description, source: item.source, image, lookup: item.lookup }),
+    body: JSON.stringify({ description: item.description, source: item.source, image }),
   };
   return (await call(`/api/brands/${encodeURIComponent(slug)}/items`, init)) as Item;
+}
+
+/**
+ * Asks the server to look up the address of the item with this `key` (ADR 008, amendment of 2026-10-17) and returns the item as
+ * it is then. It can take up to eight seconds, which is why the add does not wait for it; the caller does not either.
+ */
+export async function lookUpItem(slug: string, key: string): Promise<Item> {
+  return (await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}/lookup`, { method: "POST" })) as Item;
 }
