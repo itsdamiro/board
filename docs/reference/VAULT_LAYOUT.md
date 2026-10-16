@@ -16,13 +16,16 @@ The vault is a folder of Markdown notes (Obsidian-style). This page is the contr
       2026-10-15-1432-a3f9.png          an image (original, as pasted)
       thumbs/
         2026-10-15-1432-a3f9.png        its thumbnail
+      links/
+        0123456789abcdef.json           what the app looked up for an address
+        0123456789abcdef.jpg            the thumbnail of that page's preview picture
     _unsorted/                          items added before a brand was chosen
 ```
 
 - **The slug** is the folder name under `Brands/`, in your own spelling. The folder under `Board/` has the same name. It is the only key that joins a brand's notes to its images.
 - **The hub note** `<slug>.md` has frontmatter `status` (for example `active` or `draft`) and an optional `client: <name>`; the first paragraph of its body is shown as the summary line.
 - **Other notes** are `<slug> - <Title>.md`. Each is shown as a read-only text panel titled by the part after ` - `. `Positioning`, `Voice`, `Visual identity`, `Rejected ideas` and `Moodboard` come first in that order; any other title is allowed and follows alphabetically. A note's frontmatter `created` (`YYYY-MM-DD`, optionally with `HH:MM`, and seconds or a zone after it, which are ignored) is what the page orders its cards by; a note without one comes last.
-- **Images** live in `Board/`, a normal folder (not a dot-folder, so Obsidian embeds resolve). It holds only image files. Keep it out of git (add `Board/` to your vault's `.gitignore`) if your vault is pushed anywhere. An image id is a sortable timestamp with a short suffix, for example `2026-10-15-1432-a3f9`.
+- **Images** live in `Board/`, a normal folder (not a dot-folder, so Obsidian embeds resolve). It holds image files, and under `links/` the small JSON files and thumbnails of address lookups (below). Keep it out of git (add `Board/` to your vault's `.gitignore`) if your vault is pushed anywhere. An image id is a sortable timestamp with a short suffix, for example `2026-10-15-1432-a3f9`.
 
 ## The Moodboard note
 
@@ -42,9 +45,13 @@ A color combination to try for the footer.
 
 A reader takes a first line that starts with `![[` as the image, a last line that matches `[source](…)` as the link, and everything between as the description. The second block above has no image and no address. The frontmatter is skipped. A heading (a line starting with `#` and a space) and the lines under it, up to the next blank line, are not an item, so leave a blank line after a heading. A `[source](...)` line whose address is not http or https stays part of the description.
 
+## Address lookups
+
+When you add an address with no picture, the app fetches that page once (unless you untick the lookup for that item) and keeps its title and preview picture in `Board/<slug>/links/`. The files are named by the first 16 hex characters of the SHA-256 of the exact address: `<hash>.json` holds `{title, preview, fetched}`, and `<hash>.<ext>` is the preview's thumbnail (the original image is not kept). Nothing is written into the Moodboard note: a page's title is another person's text, so it is shown by the app and never becomes your description. Deleting an item removes these files too, unless another block in that Moodboard has the same address. Any tool that reads `Board/` must tolerate this folder.
+
 ## What the app may write
 
-- It appends a block at the end of a Moodboard note and writes files under `Board/<slug>/`. To delete a block it rewrites the note through a hidden temporary file (`.board-<random>.tmp`) in the same folder, renamed over the note, or removed if anything fails.
+- It appends a block at the end of a Moodboard note and writes files under `Board/<slug>/` (including `links/`). To delete a block it rewrites the note through a hidden temporary file (`.board-<random>.tmp`) in the same folder, renamed over the note, or removed if anything fails.
 - It never edits a block and never edits any other note. If you edit a block by hand, it is shown as it stands.
 - Deleting an item in the app removes its block and the image files its embed names, and nothing else. It does so only when you click delete on that block, and only if the block's text is unchanged since the page showed it. This applies to a block you wrote by hand as well, since the format has no marker for who wrote a block.
 - The description is the text you typed; the app writes no text of its own into a note.
