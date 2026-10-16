@@ -4,17 +4,23 @@ Every function takes the vault path `find_vault` checked and a slug, and gets th
 vault.moodboard_path, which refuses any slug that is not a brand folder and any Moodboard that is a link. The Moodboard note
 must already exist: the app writes no text of its own into a note, so it does not create one (MissingMoodboard).
 An add validates everything, makes the thumbnail, and only then writes: the files first, then the block, and the files are
-taken back if the block cannot be written. A delete removes the block first (the one write that decides), then its files.
+taken back if the block cannot be written. An address with no image is looked up once first (ADR 008) and what is found is kept
+beside the images, never in the note; a failed lookup or a failed keeping only means the item is added as it is. A delete removes
+the block first (the one write that decides), then its files.
 """
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import logging
 import os
 from urllib.parse import quote
 
-from board import images, moodboard, vault, vault_io
+from board import images, links, lookup, moodboard, vault, vault_io
 from board.moodboard import Block, MoodboardError
+
+log = logging.getLogger("board.items")
 
 MAX_TEXT = 4000  # characters of a description or an address; far more than a line a person types
 
@@ -48,7 +54,15 @@ def item_view(vault_path: str, slug: str, block: Block) -> dict:
         "width": size[0] if size else None,  # of the thumbnail, so the page can reserve the space before it loads
         "height": size[1] if size else None,
         "date": _id_date(block.image_id),  # brand_view gives an item with no date of its own the one before it
+        **_link_fields(vault_path, slug, block),
     }
+
+
+def _link_fields(vault_path: str, slug: str, block: Block) -> dict:
+    """`title` and `preview` (ADR 008, decision 8): only for an address with no picture of its own, and null when none is kept."""
+    kept = links.read(vault_path, slug, block.source) if block.source and not block.image_id else None
+    preview = {"url": kept.preview, "width": kept.width, "height": kept.height} if kept and kept.preview else None
+    return {"title": kept.title if kept else None, "preview": preview}
 
 
 def brand_view(vault_path: str, slug: str) -> dict:
@@ -77,26 +91,46 @@ def _existing_moodboard(vault_path: str, slug: str) -> str:
     return path
 
 
-def add_item(vault_path: str, slug: str, description: str, source: str | None, image: bytes | None) -> dict:
-    """Add an item at the end of the brand's Moodboard and return its view. Raises ItemError, ImageRefused, MoodboardError."""
+def add_item(vault_path: str, slug: str, description: str, source: str | None, image: bytes | None, look_up: bool = True) -> dict:
+    """Add an item at the end of the brand's Moodboard and return its view. Raises ItemError, ImageRefused, MoodboardError.
+
+    `look_up` asks for the address's title and preview (ADR 008, decision 1): only for an address with no image, and not again
+    for one already kept. It can wait up to the lookup's eight seconds and never fails the add.
+    """
     path = _existing_moodboard(vault_path, slug)
     description, source = description.strip(), (source or "").strip() or None
     if len(description) > MAX_TEXT or len(source or "") > MAX_TEXT:
         raise ItemError("the description or the address is too long")
     ext = images.sniff(image) if image is not None else None
     placeholder = "2000-01-01-0000-0000" if image is not None else None
-    moodboard.format_block(description, placeholder, ext, source)  # validates before anything is written: it refuses a bad address
+    checked = moodboard.format_block(description, placeholder, ext, source)  # validates before anything is written: it refuses a bad address
     image_id = None
     if image is not None:
         image_id = images.store(vault_path, slug, image, ext, images.thumbnail(image, ext))
+    address = moodboard.parse(checked)[0].source if image is None else None  # as the note will hold it: the key of what is kept
+    kept = _look_up(vault_path, slug, address) if look_up and address else None
     try:
         block = moodboard.format_block(description, image_id, ext, source)
         vault_io.append_block(path, block)
     except BaseException:
         if image_id:
             images.remove(vault_path, slug, image_id, ext)
+        if kept:
+            with contextlib.suppress(OSError, vault.VaultError):
+                links.remove(vault_path, slug, kept)
         raise
     return item_view(vault_path, slug, moodboard.parse(block)[0])
+
+
+def _look_up(vault_path: str, slug: str, address: str) -> str | None:
+    """Ask for the address's title and preview and keep what comes. The address if files were written for it (so a failed add can take them back), else None."""
+    try:
+        if links.has(vault_path, slug, address):
+            return None
+        return address if links.store(vault_path, slug, address, lookup.lookup(address)) else None
+    except (OSError, vault.VaultError) as err:  # decision 9: the item is added as it is; the kind of failure only, never a path
+        log.warning("keeping an address lookup failed: %s", type(err).__name__)
+        return None
 
 
 FILES_LEFT = "the item was removed from the note but its image files could not be removed"
@@ -106,9 +140,19 @@ def delete_item(vault_path: str, slug: str, key: str) -> str | None:
     """Remove the block with this key (it must be unchanged since shown) and its image files. Returns a warning, never a path, if the block went but the files stayed."""
     path = _existing_moodboard(vault_path, slug)
     block = vault_io.delete_block(path, key)
-    if block.image_id and not any(b.image_id == block.image_id and b.ext == block.ext for b in vault_io.read_blocks(path)):  # one image, two blocks
-        try:
-            images.remove(vault_path, slug, block.image_id, block.ext)
-        except (OSError, vault.VaultError):
-            return FILES_LEFT
-    return None
+    left = vault_io.read_blocks(path) if block.image_id or block.source else []
+    failed = False
+    if block.image_id and not any(b.image_id == block.image_id and b.ext == block.ext for b in left):  # one image, two blocks
+        failed |= _attempt(images.remove, vault_path, slug, block.image_id, block.ext)
+    if block.source and not any(b.source == block.source for b in left):  # one address, two blocks (ADR 008, decision 10)
+        failed |= _attempt(links.remove, vault_path, slug, block.source)
+    return FILES_LEFT if failed else None
+
+
+def _attempt(remove, *args) -> bool:
+    """Run a file removal; True if it failed. Both removals are tried even if the first fails."""
+    try:
+        remove(*args)
+    except (OSError, vault.VaultError):
+        return True
+    return False

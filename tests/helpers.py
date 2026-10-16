@@ -4,8 +4,11 @@ import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from PIL import Image
+
+from board import lookup
 
 NOTE = "---\ntype: moodboard\n---\n\n"
 FORMATS = {"png": "PNG", "jpg": "JPEG", "webp": "WEBP", "gif": "GIF"}
@@ -29,6 +32,9 @@ class VaultCase(unittest.TestCase):
     """A vault with one brand, `alpha`, that has a hub note and an empty Moodboard note."""
 
     def setUp(self):
+        patch = mock.patch.object(lookup, "lookup", return_value=lookup.Found())  # no test reaches the internet (ADR 008, decision 12); a test sets what it finds
+        self.lookup = patch.start()
+        self.addCleanup(patch.stop)
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.vault = os.path.join(os.path.realpath(self._tmp.name), "vault")

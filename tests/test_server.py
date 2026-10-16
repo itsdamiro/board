@@ -10,7 +10,7 @@ import threading
 import unittest
 from unittest import mock
 
-from board import images, items, moodboard, server, vault_io
+from board import images, items, links, lookup, moodboard, server, vault_io
 from tests.helpers import NOTE, VaultCase, make_image
 
 
@@ -537,6 +537,115 @@ class FailureTest(ServerCase):
         with mock.patch.object(items, "brand_view", side_effect=RuntimeError("x")):
             self.call("GET", "/api/brands/alpha")
         self.assertEqual(self.json("GET", "/api/brands")[0], 200)
+
+
+class LookupRouteTest(ServerCase):
+    """ADR 008 through the API: the `lookup` flag, the item's title and preview, and the preview's route. The fetch itself is `self.lookup`."""
+
+    ADDRESS = "https://example.com/page"
+
+    def setUp(self):
+        super().setUp()
+        self.lookup.return_value = lookup.Found("A page", make_image("png", (900, 450)), "png")
+
+    def post(self, **extra):
+        return self.json("POST", "/api/brands/alpha/items", {"description": "", "source": self.ADDRESS, **extra})
+
+    def test_an_address_is_looked_up_by_default_and_the_item_has_a_title_and_a_preview(self):
+        status, item = self.post()
+        self.assertEqual((status, item["title"]), (201, "A page"))
+        self.lookup.assert_called_once_with(self.ADDRESS)
+        self.assertEqual(self.call("GET", item["preview"]["url"])[0], 200)
+        self.assertEqual(self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"][0]["title"], "A page")
+
+    def test_lookup_false_asks_for_nothing(self):
+        status, item = self.post(lookup=False)
+        self.assertEqual((status, item["title"], item["preview"]), (201, None, None))
+        self.lookup.assert_not_called()
+
+    def test_lookup_true_is_the_same_as_leaving_it_out(self):
+        self.assertEqual(self.post(lookup=True)[1]["title"], "A page")
+
+    def test_lookup_that_is_not_true_or_false_is_400_and_writes_nothing(self):
+        for value in ("false", "no", 0, 1, None, [], {}):
+            with self.subTest(value=value):
+                self.assertEqual(self.post(lookup=value)[0], 400)
+        self.assertEqual(self.moodboard_text(), NOTE)
+        self.lookup.assert_not_called()
+
+    def test_a_failed_lookup_is_still_a_201_with_nothing_shown(self):
+        self.lookup.return_value = lookup.Found()
+        status, item = self.post()
+        self.assertEqual((status, item["title"], item["preview"]), (201, None, None))
+
+    def test_the_preview_is_served_with_its_type_and_the_safe_headers(self):
+        _, item = self.post()
+        status, response, body = self.call("GET", item["preview"]["url"])
+        self.assertEqual(status, 200)
+        self.assertEqual(response.getheader("Content-Type"), "image/png")
+        self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(response.getheader("Cache-Control"), server.IMAGE_CACHE)
+        self.assertIn("default-src 'self'", response.getheader("Content-Security-Policy"))
+        self.assertEqual(body, self.lookup.return_value.preview)
+        self.assertEqual((item["preview"]["width"], item["preview"]["height"]), (900, 450))
+
+    def test_a_preview_that_is_not_kept_a_brand_that_is_not_there_and_a_bad_name_are_404(self):
+        _, item = self.post()
+        url = item["preview"]["url"]
+        for path in (url.replace(".png", ".jpg"), url.replace("alpha", "nobody"), url.replace(url[-20:-4], "0" * 16), url.replace(url[-20:-4], "0" * 15),
+                     url.replace(".png", ".svg"), url.replace(".png", ".json"), url + "?x=1", url.replace("/links/", "/links/../"), url.replace("/links/", "/link/")):
+            with self.subTest(path=path):
+                self.assertEqual(self.call("GET", path)[0], 404)
+
+    def test_a_name_that_is_not_16_hex_characters_is_404_even_when_a_file_has_it(self):
+        _, item = self.post()
+        folder = os.path.join(self.vault, "Board", "alpha", "links")
+        for name in ("a" * 15, "a" * 17, "a"):
+            with open(os.path.join(folder, f"{name}.png"), "wb") as f:
+                f.write(make_image("png"))
+            with self.subTest(name=name):
+                self.assertEqual(self.call("GET", f"/api/brands/alpha/links/{name}.png")[0], 404)
+        with open(os.path.join(folder, f"{'a' * 16}.png"), "wb") as f:
+            f.write(make_image("png"))
+        self.assertEqual(self.call("GET", f"/api/brands/alpha/links/{'a' * 16}.png")[0], 200)
+
+    def test_a_folder_under_board_that_is_not_a_brand_is_not_served(self):
+        folder = os.path.join(self.vault, "Board", "gamma", "links")
+        os.makedirs(folder)
+        with open(os.path.join(folder, f"{'a' * 16}.png"), "wb") as f:
+            f.write(make_image("png"))
+        self.assertEqual(self.call("GET", f"/api/brands/gamma/links/{'a' * 16}.png")[0], 404)
+
+    def test_the_record_is_not_served(self):
+        _, item = self.post()
+        self.assertEqual(self.call("GET", item["preview"]["url"][:-3] + "json")[0], 404)
+
+    def test_a_preview_cannot_be_posted_or_deleted_through_its_address(self):
+        _, item = self.post()
+        for method in ("POST", "DELETE", "PUT"):
+            with self.subTest(method=method):
+                self.assertIn(self.call(method, item["preview"]["url"], body={})[0], (404, 501))
+        self.assertEqual(self.call("GET", item["preview"]["url"])[0], 200)
+
+    def test_a_preview_that_is_a_link_is_not_served(self):
+        _, item = self.post()
+        picture = os.path.join(self.vault, "Board", "alpha", "links", os.path.basename(item["preview"]["url"]))
+        outside = os.path.join(os.path.dirname(self.vault), "outside.png")
+        os.rename(picture, outside)
+        os.symlink(outside, picture)
+        self.assertEqual(self.call("GET", item["preview"]["url"])[0], 404)
+
+    def test_deleting_the_item_removes_the_kept_lookup_and_its_route(self):
+        _, item = self.post()
+        self.assertEqual(self.json("DELETE", f"/api/brands/alpha/items/{item['key']}")[0], 200)
+        self.assertEqual(self.board_files(), [])
+        self.assertEqual(self.call("GET", item["preview"]["url"])[0], 404)
+
+    def test_a_delete_whose_lookup_files_stay_is_a_200_with_a_warning_and_no_path(self):
+        _, item = self.post()
+        with mock.patch.object(links, "remove", side_effect=PermissionError(13, "denied", self.vault)):
+            status, body = self.json("DELETE", f"/api/brands/alpha/items/{item['key']}")
+        self.assertEqual((status, body), (200, {"deleted": item["key"], "warning": items.FILES_LEFT}))
 
 
 if __name__ == "__main__":

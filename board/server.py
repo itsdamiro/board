@@ -8,7 +8,8 @@ Routes (all under /api; errors are `{"error": "<plain text>"}`):
   GET    /api/brands                          {"brands": [slug, ...]}
   GET    /api/brands/<slug>                   the brand: badges, summary, panels, and Moodboard items, newest first
   GET    /api/brands/<slug>/images/<id>.<ext> the original image;  .../thumbs/<id>.<ext> its thumbnail
-  POST   /api/brands/<slug>/items             {"description", "source", "image"(base64)} -> the new item, 201
+  GET    /api/brands/<slug>/links/<hash>.<ext> the thumbnail of an address's preview (ADR 008)
+  POST   /api/brands/<slug>/items             {"description", "source", "image"(base64), "lookup"} -> the new item, 201
   DELETE /api/brands/<slug>/items/<key>       removes the item whose key the brand view gave
 
 Everything else that is read (GET, HEAD) is the built page, `web/dist/`: `/` is its index.html, other addresses are its files.
@@ -25,7 +26,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
-from board import images, items, moodboard, vault, vault_io
+from board import images, items, links, moodboard, vault, vault_io
 from board.moodboard import MoodboardError
 
 IMAGE_CACHE = "private, max-age=31536000, immutable"  # an image is named by its id and never changes; a deleted id is never made again
@@ -41,10 +42,12 @@ PAGE_TYPES = {  # the only files the page route serves, each with its own type (
 MAX_BODY = images.MAX_BYTES * 4 // 3 + 64 * 1024  # a 25 MB image in base64, and the text around it
 _BRAND, _KEY = r"(?P<slug>[^/]+)", r"(?P<key>[0-9a-f]{64})"
 _IMAGE = rf"(?P<kind>images|thumbs)/(?P<id>{moodboard.ID_PATTERN})\.(?P<ext>{'|'.join(images.CONTENT_TYPES)})"
+_LINK = rf"links/(?P<name>[0-9a-f]{{16}})\.(?P<ext>{'|'.join(images.CONTENT_TYPES)})"
 ROUTES = [
     ("GET", re.compile(r"/api/brands"), "brands"),
     ("GET", re.compile(rf"/api/brands/{_BRAND}"), "brand"),
     ("GET", re.compile(rf"/api/brands/{_BRAND}/{_IMAGE}"), "image"),
+    ("GET", re.compile(rf"/api/brands/{_BRAND}/{_LINK}"), "link"),
     ("POST", re.compile(rf"/api/brands/{_BRAND}/items"), "add"),
     ("DELETE", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}"), "delete"),
     ("GET", re.compile(r"/(?!api/)(?P<name>.*)"), "page"),  # last, and never under /api: an unknown API address stays a JSON 404
@@ -174,6 +177,14 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             self._send(HTTPStatus.OK, f.read(), images.CONTENT_TYPES[ext], IMAGE_CACHE)
 
+    def _route_link(self, slug: str, name: str, ext: str) -> None:
+        vault.moodboard_path(self.server.vault, slug)  # refuses a slug that is not a brand
+        path = links.path_of(self.server.vault, slug, name, ext)
+        if not path:
+            raise Failure(HTTPStatus.NOT_FOUND, "no such image")
+        with open(path, "rb") as f:
+            self._send(HTTPStatus.OK, f.read(), images.CONTENT_TYPES[ext], IMAGE_CACHE)
+
     def _route_page(self, name: str) -> None:
         path = page_file(self.server.web_dir, name or "index.html")
         if not path:
@@ -192,7 +203,10 @@ class Handler(BaseHTTPRequestHandler):
             image = base64.b64decode(picture, validate=True) if picture is not None else None
         except binascii.Error as err:
             raise Failure(HTTPStatus.BAD_REQUEST, "the image is not valid base64") from err
-        self._json(HTTPStatus.CREATED, items.add_item(self.server.vault, slug, description, source, image))
+        look_up = data.get("lookup", True)
+        if not isinstance(look_up, bool):
+            raise Failure(HTTPStatus.BAD_REQUEST, "lookup must be true or false")
+        self._json(HTTPStatus.CREATED, items.add_item(self.server.vault, slug, description, source, image, look_up))
 
     def _route_delete(self, slug: str, key: str) -> None:
         warning = items.delete_item(self.server.vault, slug, key)

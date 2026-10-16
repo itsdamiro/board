@@ -91,6 +91,15 @@ def _folders(vault: str, slug: str, create: bool) -> tuple[str | None, str | Non
     return folder, (_real_folder(folder, "thumbs", create) if folder else None)
 
 
+def links_folder(vault: str, slug: str, create: bool) -> str | None:
+    """`Board/<slug>/links`, a real folder (ADR 008, decision 7), made if `create`; None if it is not there and `create` is false."""
+    board = os.path.join(vault, "Board")
+    if create:
+        os.makedirs(board, exist_ok=True)
+    folder = _real_folder(board, slug, create)
+    return _real_folder(folder, "links", create) if folder else None
+
+
 def store(vault: str, slug: str, data: bytes, ext: str, thumb: bytes) -> str:
     """Write the original and its thumbnail under a new id and return the id. Nothing is left behind if a write fails."""
     folder, thumbs = _folders(vault, slug, create=True)

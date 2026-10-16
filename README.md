@@ -19,7 +19,7 @@ All text on screen comes from your notes. The app does not generate or rewrite t
 
 It writes in two places only, both inside the vault you point it at:
 
-- Image files and thumbnails under `Board/<brand>/`.
+- Image files and thumbnails under `Board/<brand>/`, and, for an address you add with no picture, the page's title and a thumbnail of its preview image under `Board/<brand>/links/` (the server fetches the page once; see [`SECURITY.md`](SECURITY.md) for what it may reach). The title is never written into your note.
 - Blocks it created, at the end of `Brands/<brand>/<brand> - Moodboard.md`.
 
 It never edits another note and never edits a block. Deleting an item removes only the block you click delete on, and only if its text is unchanged since the page showed it; that includes a block you wrote by hand, because the format cannot tell who wrote a block. The exact layout and block format are in [`docs/reference/VAULT_LAYOUT.md`](docs/reference/VAULT_LAYOUT.md).
