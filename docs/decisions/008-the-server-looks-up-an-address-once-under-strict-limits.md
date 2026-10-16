@@ -86,3 +86,24 @@ Alternatives rejected:
 - **Keep refusing the prefix, and ask only for IPv4 addresses.** Resolving with `AF_INET` would skip the synthesized address, is a smaller change and cannot reach anything through a translator. It fails for a site or a network that has only IPv6, and the app would then be silent about why. It becomes right if reading the embedded address proves brittle, or if IPv6-only is never wanted.
 - **Drop the non-public addresses and use the public ones left.** It makes a mixed answer work, but it was the rule "every address must be public" that makes a name that answers with both a private and a public address refuse. It becomes right only if real sites are found to answer that way.
 - **A setting that allows the whole prefix.** The owner would carry a switch that reopens loopback and the local network through a translator. Never.
+
+## Amendment (2026-10-17): addresses are tried IPv4 first, each for at most two seconds
+
+**Accepted by the owner on 2026-10-17, as drafted ("ok its accepted").**
+
+Context: after the NAT64 amendment, the owner's lookups still showed no preview. Checked on 2026-10-17 with the server's own code on the owner's connection: the page fetch of a large public site worked and found its preview picture, but the picture's host (a content-delivery network) gives eight IPv6 addresses and then four IPv4 ones, and seven of the eight IPv6 addresses time out after four seconds each while the IPv4 ones connect in about a tenth of a second. Decision 3 connects to "the first checked address that answers", in the order the name gave them, and decision 5 allows eight seconds in all, so the budget ends on the second dead IPv6 address and the IPv4 ones are never tried. The same happens to a page whose own host lists IPv6 first. Decision 9 then drops the picture and keeps the title, which is what the owner saw.
+
+Decision 3's order and decision 5's connect bound change, and nothing else:
+
+1. **IPv4 addresses are tried before IPv6 ones**, each group in the order the name gave them. Every address is still checked first, by decision 3 and its NAT64 amendment, before any connection is made.
+2. **Each connection attempt gets at most two seconds** (it was five) and never more than the time left of the eight. Reading is still five seconds per read, and the whole lookup is still eight seconds.
+
+Consequences: a site is reached over IPv4 when the connection has a working IPv4 route, which is nearly everywhere, and over IPv6 or NAT64 when it does not, because a missing IPv4 route fails at once instead of waiting. On a connection where IPv4 is the dead one, each IPv4 address costs two seconds before IPv6 is tried, so a name with four dead IPv4 addresses spends the whole budget; that is rare and gives a bare item as today. A site that is slow to accept a connection, over two seconds, no longer gets a preview, where five seconds would have let it through.
+
+Tests: in `tests/test_lookup.py`, a name that gives IPv6 addresses before IPv4 ones is connected to over IPv4 first, with every address still checked and a refused one still refusing the name; an IPv4 address that does not answer is followed by the IPv6 one; each attempt's timeout is two seconds, or the time left if that is less; the order inside each family is the name's. Each rule is checked against a weakened version with `scripts/mutate.py` (decision 12). No test reaches the real internet. `docs/reference/GOTCHAS.md` gets an entry for a title that comes without its picture on a connection whose IPv6 addresses time out.
+
+Alternatives rejected:
+
+- **Racing the addresses at once (happy eyeballs, RFC 8305).** The best behaviour for the user and the standard for browsers, but it opens several connections and needs threads, a second state to test and to bound. It becomes right if ordering and two seconds prove too slow or too brittle.
+- **Asking the system for IPv4 addresses only.** Smaller, but it fails for a site or a network that has only IPv6, including the NAT64 networks the first amendment serves. It becomes right if IPv6-only is never wanted.
+- **Keeping the order and raising the eight seconds.** The add would wait longer for every dead address, and the owner is waiting on the page meanwhile. Never.

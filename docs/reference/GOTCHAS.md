@@ -63,6 +63,11 @@
 - **Cause:** the network's DNS adds a synthesized IPv6 address in `64:ff9b::/96` (NAT64) next to a site's IPv4 address. Until ADR 008's amendment of 2026-10-17 the check refused that whole prefix, and one refused address refuses the name. Now such an address is judged by the IPv4 address in its last 32 bits (`_is_public` in `board/lookup.py`).
 - **Do this:** to see what a name gives, run `.venv/bin/python -c "import socket; print([a[4][0] for a in socket.getaddrinfo('example.com', 443, type=socket.SOCK_STREAM)])"`; an address starting `64:ff9b::` is NAT64, and the last two groups are the IPv4 address in hex. If the lookup is still refused, one of the other addresses is not public, and that is the rule working.
 
+### A title comes without its picture on a connection whose IPv6 addresses time out
+- **Symptom:** an address is added with its title but no preview picture, and the server prints `address lookup of the preview failed: network or protocol error (TimeoutError)`, or the whole lookup fails with `took too long`, for sites that work in a browser.
+- **Cause:** a name, often a content-delivery network's, gives several IPv6 addresses and then IPv4 ones. On a connection with no working IPv6 route each IPv6 address waits for its connect timeout, and the eight seconds of the lookup are gone before an IPv4 address is tried. Until ADR 008's second amendment of 2026-10-17 the addresses were tried in the order DNS gave them, each for five seconds; now IPv4 comes first and an attempt takes at most two seconds (`_open`, `ATTEMPT_TIMEOUT` in `board/lookup.py`).
+- **Do this:** to see which addresses answer, run `.venv/bin/python -c "import socket,time; [print(a[4][0], time.time()) for a in socket.getaddrinfo('example.com', 443, type=socket.SOCK_STREAM)]"` and connect to each with `socket.create_connection((ip, 443), 4)`, timing it. If every address fails or the connect takes over two seconds, the network is the cause and the item stays bare, as ADR 008 decision 9 says.
+
 ## 2. Recipes
 
 None yet.

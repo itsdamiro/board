@@ -69,7 +69,7 @@ class Site:
         self.routes, self.requests, self.connects, self.resolved = {}, [], [], []
         self.names = {"good.test": [PUBLIC], "other.test": [OTHER_PUBLIC], "evil.test": ["10.0.0.5"], "mixed.test": [PUBLIC, "10.0.0.5"],
                       "localhost": ["127.0.0.1"], "loop6.test": ["::1"],
-                      "nat64.test": [NAT64_PUBLIC, PUBLIC], "nat64-private.test": ["64:ff9b::a00:1"],
+                      "nat64.test": [NAT64_PUBLIC], "nat64-private.test": ["64:ff9b::a00:1"],
                       "nat64-mixed.test": [NAT64_PUBLIC, "64:ff9b::7f00:1"]}
         self.release = threading.Event()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -208,7 +208,7 @@ class RefusedAddressesTest(LookupCase):
         self.assertFalse(lookup._is_public("64:ff9b:1::808:808"))  # the local-use prefix is not the well-known one
         self.assertTrue(lookup._is_public("64:ff9b::1:7f00:1"))  # outside the /96 the last 32 bits mean nothing: an ordinary global address
 
-    def test_a_name_with_a_nat64_address_and_a_public_ipv4_one_is_looked_up_at_the_checked_address_after_one_resolution(self):
+    def test_a_name_with_only_a_nat64_address_is_looked_up_at_the_checked_address_after_one_resolution(self):
         self.serve("/", ok(page(title="Hi")))
         self.assertEqual(self.get("http://nat64.test/").title, "Hi")
         self.assertEqual((self.site.resolved, self.site.connects), (["nat64.test"], [NAT64_PUBLIC]))
@@ -290,6 +290,49 @@ class WhatIsAskedTest(LookupCase):
         with mock.patch.object(lookup, "_connect", connect):
             self.assertEqual(self.get("http://two.test/").title, "T")
         self.assertEqual(self.site.connects, [PUBLIC, OTHER_PUBLIC])
+
+    def test_ipv4_addresses_are_tried_before_ipv6_ones_each_group_in_the_names_order(self):
+        v6a, v6b = "2606:4700:4700::1111", "2001:4860:4860::8888"
+        self.site.names["dual.test"] = [v6a, PUBLIC, v6b, OTHER_PUBLIC]
+        self.serve("/", ok(page(title="T")))
+        real = self.site.connect
+
+        def connect(ip, port, timeout):
+            if ip != v6b:
+                self.site.connects.append(ip)
+                raise ConnectionRefusedError
+            return real(ip, port, timeout)
+
+        with mock.patch.object(lookup, "_connect", connect):
+            self.assertEqual(self.get("http://dual.test/").title, "T")
+        self.assertEqual(self.site.connects, [PUBLIC, OTHER_PUBLIC, v6a, v6b])
+
+    def test_a_name_with_ipv6_first_is_reached_over_ipv4_when_that_answers(self):
+        self.site.names["dual.test"] = ["2606:4700:4700::1111", "2001:4860:4860::8888", PUBLIC]
+        self.serve("/", ok(page(title="T")))
+        self.assertEqual(self.get("http://dual.test/").title, "T")
+        self.assertEqual(self.site.connects, [PUBLIC])
+
+    def test_every_address_is_still_checked_before_any_is_tried(self):
+        self.site.names["dual.test"] = ["2606:4700:4700::1111", PUBLIC, "fd00::1"]
+        self.assertEqual(self.get("http://dual.test/"), lookup.Found())
+        self.assertEqual(self.site.connects, [])
+
+    def test_an_attempt_takes_at_most_two_seconds_and_never_more_than_the_time_left(self):
+        timeouts = []
+
+        def connect(ip, port, timeout):
+            timeouts.append(timeout)
+            raise TimeoutError
+
+        self.site.names["two.test"] = [PUBLIC, OTHER_PUBLIC]
+        with mock.patch.object(lookup, "_connect", connect):
+            self.assertEqual(self.get("http://two.test/"), lookup.Found())
+            self.assertEqual(timeouts, [lookup.ATTEMPT_TIMEOUT] * 2)
+            timeouts.clear()
+            with mock.patch.object(lookup, "TOTAL_TIMEOUT", 0.5):
+                self.get("http://two.test/")
+        self.assertTrue(timeouts and all(t <= 0.5 for t in timeouts))
 
     def test_https_checks_the_certificate_against_the_name_given(self):
         calls = []
@@ -511,7 +554,7 @@ class BoundsTest(LookupCase):
 
     def test_a_connection_that_times_out_gives_nothing(self):
         def connect(ip, port, timeout):
-            self.assertEqual(timeout, lookup.CONNECT_TIMEOUT)
+            self.assertEqual(timeout, lookup.ATTEMPT_TIMEOUT)
             raise TimeoutError
 
         with mock.patch.object(lookup, "_connect", connect):
@@ -576,8 +619,9 @@ class BoundsTest(LookupCase):
         self.assertEqual(self.get(), lookup.Found("T"))
         self.assertLess(time.monotonic() - started, 3)
 
-    def test_the_default_times_are_five_and_eight_seconds(self):
+    def test_the_default_times_are_two_five_and_eight_seconds(self):
         self.assertEqual((lookup.CONNECT_TIMEOUT, lookup.READ_TIMEOUT, lookup.TOTAL_TIMEOUT), (5.0, 5.0, 8.0))
+        self.assertEqual(lookup.ATTEMPT_TIMEOUT, 2.0)
 
     def test_the_default_redirect_and_preview_limits(self):
         self.assertEqual((lookup.MAX_REDIRECTS, lookup.PREVIEW_BYTES, lookup.ALLOWED_PORTS), (3, 5 * 1024 * 1024, (80, 443)))

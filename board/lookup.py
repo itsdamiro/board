@@ -35,7 +35,8 @@ log = logging.getLogger("board.lookup")
 
 ALLOWED_PORTS = (80, 443)
 MAX_REDIRECTS = 3
-CONNECT_TIMEOUT = 5.0
+CONNECT_TIMEOUT = 5.0  # the secure handshake after a connection
+ATTEMPT_TIMEOUT = 2.0  # one connection attempt to one address (ADR 008, amendment of 2026-10-17)
 READ_TIMEOUT = 5.0
 TOTAL_TIMEOUT = 8.0
 PAGE_BYTES = 512 * 1024
@@ -219,10 +220,11 @@ def _addresses(target: _Target, budget: _Budget) -> list[str]:
 
 
 def _open(target: _Target, ips: list[str], budget: _Budget) -> socket.socket:
-    """A connection to the first checked address that answers, secured for https against the host name."""
-    for ip in ips:
+    """A connection to the first checked address that answers, secured for https against the host name. IPv4 addresses come first,
+    each group in the name's order, and an attempt takes at most ATTEMPT_TIMEOUT, so dead IPv6 routes do not use up the whole limit."""
+    for ip in sorted(ips, key=lambda ip: ":" in ip):
         try:
-            sock = _connect(ip, target.port, budget.timeout(CONNECT_TIMEOUT))
+            sock = _connect(ip, target.port, budget.timeout(ATTEMPT_TIMEOUT))
         except OSError:
             continue
         try:
