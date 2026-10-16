@@ -21,7 +21,7 @@ The vault is a folder of Markdown notes (Obsidian-style). This page is the contr
 
 - **The slug** is the folder name under `Brands/`, in your own spelling. The folder under `Board/` has the same name. It is the only key that joins a brand's notes to its images.
 - **The hub note** `<slug>.md` has frontmatter `status` (for example `active` or `draft`) and an optional `client: <name>`; the first paragraph of its body is shown as the summary line.
-- **Other notes** are `<slug> - <Title>.md`. Each is shown as a read-only text panel titled by the part after ` - `. `Positioning`, `Voice`, `Visual identity`, `Rejected ideas` and `Moodboard` come first in that order; any other title is allowed and follows alphabetically. A note's frontmatter `created` (`YYYY-MM-DD`, optionally with `HH:MM`) is what the page orders its cards by; a note without one comes last.
+- **Other notes** are `<slug> - <Title>.md`. Each is shown as a read-only text panel titled by the part after ` - `. `Positioning`, `Voice`, `Visual identity`, `Rejected ideas` and `Moodboard` come first in that order; any other title is allowed and follows alphabetically. A note's frontmatter `created` (`YYYY-MM-DD`, optionally with `HH:MM`, and seconds or a zone after it, which are ignored) is what the page orders its cards by; a note without one comes last.
 - **Images** live in `Board/`, a normal folder (not a dot-folder, so Obsidian embeds resolve). It holds only image files. Keep it out of git (add `Board/` to your vault's `.gitignore`) if your vault is pushed anywhere. An image id is a sortable timestamp with a short suffix, for example `2026-10-15-1432-a3f9`.
 
 ## The Moodboard note

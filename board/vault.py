@@ -24,7 +24,7 @@ FIRST_PANELS = ("Positioning", "Voice", "Visual identity", "Rejected ideas", "Mo
 _FIRST_FOLDED = tuple(t.casefold() for t in FIRST_PANELS)
 _WIKILINK = re.compile(r"(?<!!)\[\[(?P<target>[^\[\]|]*)(?:\|(?P<shown>[^\[\]]*))?\]\]")
 _HEADING = re.compile(r"#{1,6}(?:\s|$)")
-_DATE = re.compile(r"(?P<day>\d{4}-\d{2}-\d{2})(?:[T ](?P<time>\d{2}:\d{2}))?")
+_DATE = re.compile(r"(?P<day>\d{4}-\d{2}-\d{2})(?:[T ](?P<time>\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?")
 
 
 class VaultError(ValueError):

@@ -49,6 +49,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
         enqueue(files);
         return;
       }
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return; // text pasted into a field is that field's own
       const address = source === null ? webAddress(event.clipboardData?.getData("text/plain") ?? "") : null;
       if (address !== null) {
         event.preventDefault();

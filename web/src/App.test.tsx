@@ -867,6 +867,46 @@ describe("adding an item", () => {
     expect(screen.queryByLabelText("Address of the original")).toBeNull();
   });
 
+  it("takes an address left in the typed field when the focus leaves it", async () => {
+    await ready();
+    await withImage();
+    fireEvent.click(screen.getByRole("button", { name: "Add the address of the original" }));
+    const address = screen.getByLabelText("Address of the original");
+    fireEvent.change(address, { target: { value: "https://example.com/left" } });
+    fireEvent.blur(address);
+    expect(screen.getByText("https://example.com/left")).toBeTruthy();
+    expect(screen.queryByLabelText("Address of the original")).toBeNull();
+  });
+
+  it("takes nothing from the blur that follows Escape or Enter on the typed field", async () => {
+    await ready();
+    await withImage();
+    for (const key of ["Escape", "Enter"]) {
+      fireEvent.click(screen.getByRole("button", { name: "Add the address of the original" }));
+      const address = screen.getByLabelText("Address of the original");
+      fireEvent.change(address, { target: { value: "https://example.com/once" } });
+      // Both in one batch, as a browser does it: the field is removed after the key, and the blur fires on the way out, before the page has re-rendered.
+      act(() => {
+        fireEvent.keyDown(address, { key });
+        fireEvent.blur(address);
+      });
+      if (key === "Escape") expect(screen.queryByText("https://example.com/once")).toBeNull();
+      else {
+        expect(screen.getAllByText("https://example.com/once")).toHaveLength(1);
+        fireEvent.click(screen.getByRole("button", { name: "Remove address" }));
+      }
+    }
+  });
+
+  it("leaves an address pasted into the description field as the description's text", async () => {
+    await ready();
+    const field = await withImage();
+    const pasted = pasteEvent([], "https://example.com/page");
+    field.dispatchEvent(pasted);
+    expect(pasted.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("button", { name: "Remove address" })).toBeNull();
+  });
+
   it("queues several dropped images and adds them one by one", async () => {
     const { server } = await ready();
     document.dispatchEvent(dropEvent([png(), png()]));

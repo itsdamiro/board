@@ -294,11 +294,12 @@ class PanelsTest(VaultTestCase):
         self.assertEqual(self.read().panels[0], vault.Panel("Voice", "", None))
 
     def test_a_panel_has_the_date_from_its_created_frontmatter_or_none(self):
-        for title, created in (("A", "2026-10-15"), ("B", "2026-10-15 14:32"), ("C", '"2026-10-15T14:32"'), ("D", "last week"), ("E", "2026-10-15T14:32:10")):
+        for title, created in (("A", "2026-10-15"), ("B", "2026-10-15 14:32"), ("C", '"2026-10-15T14:32"'), ("D", "last week"), ("E", "2026-10-15T14:32:10"), ("G", "2026-10-15T14:32:10.5Z"), ("H", "2026-10-15 14:32:10+02:00"), ("I", "2026-10-15T14:32-0500"), ("J", "2026-10-15T14")):
             self.note("alpha", f"alpha - {title}.md", f"---\ncreated: {created}\n---\nbody")
         self.note("alpha", "alpha - F.md", "no frontmatter")
         by = {p.title: p.date for p in self.read().panels}
-        self.assertEqual(by, {"A": "2026-10-15", "B": "2026-10-15T14:32", "C": "2026-10-15T14:32", "D": None, "E": None, "F": None})
+        shown = "2026-10-15T14:32"  # seconds and a zone are accepted and dropped: the date only orders cards
+        self.assertEqual(by, {"A": "2026-10-15", "B": shown, "C": shown, "D": None, "E": shown, "F": None, "G": shown, "H": shown, "I": shown, "J": None})
 
     def test_a_link_leaving_the_brand_folder_is_a_problem_and_is_never_read(self):
         outside = os.path.join(self.root, "outside.md")
