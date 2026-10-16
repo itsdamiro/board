@@ -11,7 +11,7 @@ tags: [type/decision, status/accepted, project/board, topic/privacy, topic/data-
 
 # 003 — The repository is public under the MIT licence, and its documents tell a stranger what the app writes
 
-> **Summary.** The repository at `github.com/itsdamiro/board` is public so that other people can use the app, under the MIT licence, with a README, a description of the vault layout the app expects and a security policy. Only tracked files are shared, and none may carry the owner's private material. It costs a stricter bar on what is committed, on what the app may write into a stranger's notes, and on keeping the public documents true.
+> **Summary.** The repository is public on GitHub so that other people can use the app, under the MIT licence, with a README, a description of the vault layout the app expects and a security policy. Only tracked files are shared, and none may carry the owner's private material. It costs a stricter bar on what is committed, on what the app may write into a stranger's notes, and on keeping the public documents true.
 
 Accepted by the owner on 2026-10-15: decisions 1 to 6, including the public repository under the MIT licence; the items under "Open" stay open (outside pull requests, private vulnerability reporting, the private-terms gate, how general the app is).
 
