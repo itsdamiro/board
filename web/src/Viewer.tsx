@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import type { Item } from "./api";
+import { itemWords, type Item } from "./api";
 
 // An image shown large at the centre of the window over the blurred page, with arrows to the previous and next image (ADR 002,
 // amendment of 2026-10-16 on the viewer). It shows the original, not the thumbnail. The words and the address are text, as on a
@@ -23,7 +23,7 @@ export default function Viewer({
 }) {
   const item = images[index];
   if (item === undefined || item.image === null) return null;
-  const label = item.description !== "" ? item.description : "Image";
+  const label = itemWords(item);
   const go = (to: number) => {
     if (to >= 0 && to < images.length) onIndex(to);
   };

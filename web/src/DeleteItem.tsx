@@ -1,21 +1,25 @@
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { deleteItem, type Item } from "./api";
+import { deleteItem, itemWords, type Item } from "./api";
+import type { PlacedItem } from "./cardOrder";
 
 // The delete control of an item's card (ADR 002, amendments of 2026-10-16 on delete): an icon button that shows only while the
-// pointer is over the card, or while it has the keyboard's focus, and a confirmation before anything is removed. The same
-// confirmation serves the cards picked with shift-click. The server refuses a block that changed since it was shown (409),
-// and its words are shown as they come.
+// pointer is over the card, or while it has the keyboard's focus, and a confirmation before anything is removed. One
+// confirmation serves a card's own button and the cards picked with shift-click. The server refuses a block that changed
+// since it was shown (409), and its words are shown as they come.
 
 const BUTTON =
   "absolute top-2 right-2 flex size-8 items-center justify-center rounded-full border border-border bg-card text-card-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring hover:bg-accent hover:text-accent-foreground motion-reduce:transition-none";
 const ACTION = "rounded-md border border-border px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60";
 
-const words = (item: Item) => (item.description !== "" ? item.description : "Image");
-
-/** Asks, then removes the items one after the other (two writes to one note at once would only meet the server's 409). */
-export function ConfirmDelete({ slug, items, onDeleted, onClose }: { slug: string; items: Item[]; onDeleted: () => void; onClose: () => void }) {
+/**
+ * Asks, then removes the items one after the other (two writes to one note at once would only meet the server's 409).
+ * `onDone` is told the card keys of the items that went, and always runs: the server may have removed the block and still refused, when its image
+ * files could not be removed, so the page asks it again whatever the answer was. The dialog belongs to the cards' list, not to
+ * a card, so it stays up with its message while the list is read again.
+ */
+export function ConfirmDelete({ slug, items, onDone, onClose }: { slug: string; items: PlacedItem[]; onDone: (removed: string[]) => void; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -27,19 +31,19 @@ export function ConfirmDelete({ slug, items, onDeleted, onClose }: { slug: strin
     if (busy) return;
     setBusy(true);
     setProblem(null);
-    let removed = 0;
+    const removed: string[] = [];
     try {
-      for (const item of items) {
+      for (const { key, item } of items) {
         await deleteItem(slug, item.key);
-        removed += 1;
+        removed.push(key);
       }
       onClose();
     } catch (failure) {
       const reason = failure instanceof Error ? failure.message : "Something went wrong.";
-      setProblem(items.length > 1 ? `${removed} of ${items.length} deleted. ${reason}` : reason);
+      setProblem(items.length > 1 ? `${removed.length} of ${items.length} deleted. ${reason}` : reason);
     } finally {
       setBusy(false);
-      if (removed > 0) onDeleted(); // show what is left, whether or not the rest went
+      onDone(removed);
     }
   }
 
@@ -52,11 +56,11 @@ export function ConfirmDelete({ slug, items, onDeleted, onClose }: { slug: strin
           <p className="text-sm text-muted-foreground">
             {many ? "They are" : "It is"} removed from the Moodboard note, with {many ? "their" : "its"} image files. This cannot be undone.
           </p>
-          {items.some((item) => item.description !== "") && (
+          {items.some(({ item }) => item.description !== "") && (
             <ul className="flex min-h-0 flex-col gap-1 overflow-y-auto text-sm">
-              {items.map((item) => (
-                <li key={item.key} className="line-clamp-2 whitespace-pre-wrap">
-                  {words(item)}
+              {items.map(({ key, item }) => (
+                <li key={key} className="line-clamp-2 whitespace-pre-wrap">
+                  {itemWords(item)}
                 </li>
               ))}
             </ul>
@@ -80,14 +84,10 @@ export function ConfirmDelete({ slug, items, onDeleted, onClose }: { slug: strin
   );
 }
 
-export default function DeleteItem({ slug, item, onDeleted }: { slug: string; item: Item; onDeleted: () => void }) {
-  const [asking, setAsking] = useState(false);
+export function DeleteButton({ item, onAsk }: { item: Item; onAsk: () => void }) {
   return (
-    <>
-      <button type="button" aria-label={`Delete ${item.description !== "" ? item.description : "image"}`} onClick={() => setAsking(true)} className={BUTTON}>
-        <Trash2 aria-hidden="true" className="size-4" />
-      </button>
-      {asking && <ConfirmDelete slug={slug} items={[item]} onDeleted={onDeleted} onClose={() => setAsking(false)} />}
-    </>
+    <button type="button" aria-label={`Delete ${itemWords(item)}`} onClick={onAsk} className={BUTTON}>
+      <Trash2 aria-hidden="true" className="size-4" />
+    </button>
   );
 }

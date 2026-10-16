@@ -1,10 +1,11 @@
 import { Check } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { orderCards, type Card } from "./cardOrder";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { itemCards, type Card, type PlacedItem } from "./cardOrder";
 import type { Columns } from "./useColumns";
-import DeleteItem, { ConfirmDelete } from "./DeleteItem";
+import { ConfirmDelete, DeleteButton } from "./DeleteItem";
+import { keyIsTaken } from "./keys";
 import Viewer from "./Viewer";
-import type { Brand, Item, Panel } from "./api";
+import { itemWords, type Brand, type Item, type Panel } from "./api";
 
 // The brand as cards in columns, as many as the stage's width has room for, each card keeping its own proportions
 // (ADR 001, decision 4; ADR 002, amendment on the cards). Every text on a card is shown as text (ADR 002, decision 7);
@@ -17,10 +18,10 @@ function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) 
   return (
     <>
       {item.thumb !== null && item.image !== null && (
-        <button type="button" aria-label={`View ${item.description !== "" ? item.description : "image"}`} onClick={(event) => onView(event.currentTarget)} className={`block w-full cursor-zoom-in ${LINK}`}>
+        <button type="button" aria-label={`View ${itemWords(item)}`} onClick={(event) => onView(event.currentTarget)} className={`block w-full cursor-zoom-in ${LINK}`}>
           <img
             src={item.thumb}
-            alt={item.description !== "" ? item.description : "Image"}
+            alt={itemWords(item)}
             width={item.width ?? undefined}
             height={item.height ?? undefined}
             loading="lazy"
@@ -72,73 +73,68 @@ function Body({ card, onView }: { card: Card; onView: (opener: HTMLElement) => v
   return <ItemCard item={card.item} onView={onView} />;
 }
 
-/** `adder` is the box that takes a pasted or dropped image; it is the first card, before the brand's own. `onChanged` is told after an item is deleted. */
-export default function Cards({ brand, adder, columns, onChanged }: { brand: Brand; adder?: ReactNode; columns: Columns; onChanged: () => void }) {
-  const cards = orderCards(brand);
+/**
+ * `adder` is the box that takes a pasted or dropped image; it is the first card, before the brand's own. `cards` are in the order
+ * `orderCards` gives. `onChanged` is told after a delete was tried, so the page reads the brand again.
+ */
+export default function Cards({ slug, cards, adder, columns, onChanged }: { slug: string; cards: Card[]; adder?: ReactNode; columns: Columns; onChanged: () => void }) {
   // The viewer steps through the images in the order of the cards, so previous and next are the neighbours the owner sees.
-  const gallery = cards.flatMap((card) => (card.kind === "item" && card.item.image !== null ? [{ key: card.key, item: card.item }] : []));
+  const placed = itemCards(cards);
+  const gallery = placed.filter((entry) => entry.item.image !== null);
   const [viewing, setViewing] = useState<string | null>(null);
-  // Cards picked with shift-click, to delete together. Keys of items no longer in the brand are ignored, so nothing is pruned by hand.
+  // Cards picked with shift-click, to delete together. A key of an item no longer in the brand is ignored, and one that was just removed is dropped.
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
-  const [asking, setAsking] = useState(false);
-  const selection = cards.flatMap((card) => (card.kind === "item" && picked.has(card.key) ? [card.item] : []));
+  const [deleting, setDeleting] = useState<PlacedItem[] | null>(null); // the items the open question is about: one card's, or the picked ones
+  const selection = placed.filter((entry) => picked.has(entry.key));
   const none = selection.length === 0;
   useEffect(() => {
-    if (none || asking) return;
+    if (none) return;
     const clear = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPicked(new Set());
+      if (event.key === "Escape" && !keyIsTaken(event.target)) setPicked(new Set());
     };
     document.addEventListener("keydown", clear);
     return () => document.removeEventListener("keydown", clear);
-  }, [none, asking]);
+  }, [none]);
   const opener = useRef<HTMLElement | null>(null);
+  const { watchStage, count } = columns;
   const viewed = gallery.findIndex((entry) => entry.key === viewing);
-  const [stage, setStage] = useState<HTMLUListElement | null>(null);
-  const { setWidth, chosen, count, choosable } = columns;
-  useEffect(() => {
-    if (stage === null) return;
-    // A shift-click on an item card picks it instead of doing what the click would. It is caught here, on the list, in the capture
-    // phase, so the picture's own click never runs; a click in the confirmation dialog is outside the list and is left alone.
-    const cardOf = (event: MouseEvent) => (event.shiftKey && event.target instanceof Element ? event.target.closest<HTMLElement>("li[data-item-key]") : null);
-    const pick = (event: MouseEvent) => {
-      const key = cardOf(event)?.dataset.itemKey;
-      if (key === undefined) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPicked((now) => {
-        const next = new Set(now);
-        if (!next.delete(key)) next.add(key);
-        return next;
-      });
+
+  // A click with Shift held on an item card picks it instead of doing what the click would. It is caught in the capture phase, so
+  // the picture's own click never runs; the dialogs are outside the list, so a click in them is left alone.
+  function shiftPick(key: string) {
+    return {
+      onClickCapture(event: MouseEvent) {
+        if (!event.shiftKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setPicked((now) => {
+          const next = new Set(now);
+          if (!next.delete(key)) next.add(key);
+          return next;
+        });
+      },
+      onMouseDown(event: MouseEvent) {
+        if (event.shiftKey) event.preventDefault(); // no text selection
+      },
     };
-    const noTextSelection = (event: MouseEvent) => {
-      if (cardOf(event) !== null) event.preventDefault();
-    };
-    stage.addEventListener("click", pick, true);
-    stage.addEventListener("mousedown", noTextSelection);
-    const follow = () => {
-      if (stage.clientWidth > 0) setWidth(stage.clientWidth); // 0 is a page not laid out (hidden, or no layout engine)
-    };
-    follow();
-    const watcher = new ResizeObserver(follow);
-    watcher.observe(stage);
-    return () => {
-      watcher.disconnect();
-      stage.removeEventListener("click", pick, true);
-      stage.removeEventListener("mousedown", noTextSelection);
-    };
-  }, [stage, setWidth]);
+  }
+
+  function done(removed: string[]) {
+    setPicked((now) => new Set([...now].filter((key) => !removed.includes(key))));
+    onChanged();
+  }
+
   if (cards.length === 0 && adder === undefined) return null;
   return (
     <>
-      <ul ref={setStage} aria-label="Cards" className="gap-4" style={{ columns: chosen === null && choosable ? "18rem" : count }}>
+      <ul ref={watchStage} aria-label="Cards" className="gap-4" style={{ columns: count }}>
         {adder !== undefined && <li className="mb-4 break-inside-avoid rounded-lg border-2 border-dashed border-border text-card-foreground">{adder}</li>}
         {cards.map((card) => {
           const isPicked = card.kind === "item" && picked.has(card.key);
           return (
             <li
               key={card.key}
-              data-item-key={card.kind === "item" ? card.key : undefined}
+              {...(card.kind === "item" ? shiftPick(card.key) : {})}
               className={`group relative mb-4 break-inside-avoid overflow-hidden rounded-lg border bg-card text-card-foreground ${isPicked ? "border-ring ring-2 ring-ring" : "border-border"}`}
             >
               <Body card={card} onView={(from) => { opener.current = from; setViewing(card.key); }} />
@@ -147,7 +143,7 @@ export default function Cards({ brand, adder, columns, onChanged }: { brand: Bra
                   <Check className="size-4" />
                 </span>
               )}
-              {card.kind === "item" && <DeleteItem slug={brand.slug} item={card.item} onDeleted={onChanged} />}
+              {card.kind === "item" && <DeleteButton item={card.item} onAsk={() => setDeleting([{ key: card.key, item: card.item }])} />}
             </li>
           );
         })}
@@ -155,7 +151,7 @@ export default function Cards({ brand, adder, columns, onChanged }: { brand: Bra
       {!none && (
         <output aria-label="Selection" className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-card px-4 py-2 text-sm text-card-foreground shadow-md">
           <span>{selection.length} selected</span>
-          <button type="button" onClick={() => setAsking(true)} className="rounded-md border border-destructive px-3 py-1 text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-ring">
+          <button type="button" onClick={() => setDeleting(selection)} className="rounded-md border border-destructive px-3 py-1 text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-ring">
             Delete {selection.length}
           </button>
           <button type="button" onClick={() => setPicked(new Set())} className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
@@ -163,7 +159,7 @@ export default function Cards({ brand, adder, columns, onChanged }: { brand: Bra
           </button>
         </output>
       )}
-      {asking && !none && <ConfirmDelete slug={brand.slug} items={selection} onDeleted={onChanged} onClose={() => setAsking(false)} />}
+      {deleting !== null && <ConfirmDelete slug={slug} items={deleting} onDone={done} onClose={() => setDeleting(null)} />}
       {viewed >= 0 && (
         <Viewer
           images={gallery.map((entry) => entry.item)}

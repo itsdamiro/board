@@ -148,3 +148,14 @@ The owner asked in chat on 2026-10-16: "lets also put a key press shortcut to +/
 ## Amendment (2026-10-16): no mutation tool for the page's logic
 
 The last open item of the list above is decided, on the owner's acceptance of the assistant's recommendation: a mutation tool does not cover the page's logic. The page stays thin, and Vitest and the e2e flow (ADR 006) test it. This is revisited if the page's logic grows beyond what those tests can reasonably check.
+
+## Amendment (2026-10-16): changes from the review of the card layout
+
+A review of the commits since the layout (xhigh, 13 findings) found these; the owner asked for them to be fixed. They change what the page does as follows, and nothing else in this record.
+
+1. **The delete question belongs to the cards' list, not to a card, and the page always reads the brand again after a delete was tried.** The server can remove a block and still answer 500 when its image files could not be removed; the page used to count that as nothing deleted, kept the card and skipped the reload. Now the question stays up with the server's words while the list is read again, and the card goes if its block did.
+2. **Picks are dropped as soon as their deletion went through**, not when the reload arrives, so "N selected" and its Delete button never name blocks that are gone. The ones that failed stay picked.
+3. **A key the page takes from anywhere (Escape to drop the picks, + and - for the columns) is left alone while a field is being typed in or a dialog is open**, since the viewer and the delete question are not modal: closing the viewer with Escape no longer drops the picks, and + does not move the columns behind it.
+4. **The column count is always set from the measured width** (`columns: <count>`), not left to the browser with `18rem` until a button is pressed, so the number in the pill is the number of columns drawn (with a larger root font size, or on a stage over about 2400 px, the two could differ).
+5. **Smaller:** removing the picture that is being sent no longer drops the next queued one; the address field's blur no longer takes an address that Enter or Escape just closed; two identical blocks picked together no longer share a React key in the question; an item with no description is called "Image" everywhere (so the buttons read "View Image" and "Delete Image").
+6. **Not changed, taken knowingly:** a pasted address is still taken as the item's address even while the description field has the focus; a note's `created` with seconds or a zone still counts as no date (the two shapes `docs/reference/API.md` documents).

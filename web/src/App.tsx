@@ -64,6 +64,7 @@ export default function App() {
     return () => controller.abort();
   }, [slug, reload]);
 
+  const cards = brand === null ? [] : orderCards(brand);
   const refresh = () => setReload((n) => n + 1);
 
   function choose(next: string) {
@@ -74,7 +75,6 @@ export default function App() {
     writeLastBrand(next);
   }
 
-
   return (
     <div className="flex flex-col gap-6 p-6">
       <header className="flex items-center justify-between gap-4">
@@ -82,7 +82,7 @@ export default function App() {
           {brands !== null && brands.length > 0 ? <BrandSelect brands={brands} current={slug} onChoose={choose} /> : <span className="px-2 text-3xl">Board</span>}
         </h1>
         <div className="flex items-center gap-2">
-          {brand !== null && columns.choosable && orderCards(brand).length > 0 && <ColumnButtons columns={columns} />}
+          {columns.choosable && cards.length > 0 && <ColumnButtons columns={columns} />}
           <ThemeToggle />
         </div>
       </header>
@@ -109,7 +109,7 @@ export default function App() {
                 {brand.moodboard.problem}
               </p>
             )}
-            <Cards columns={columns} brand={brand} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
+            <Cards columns={columns} slug={brand.slug} cards={cards} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={refresh} /> : undefined} />
           </>
         )}
       </main>

@@ -34,6 +34,14 @@ function goesBefore(note: DatedPanel, item: Item): boolean {
   return item.date === null || note.date > item.date;
 }
 
+/** An item with its card's key, which is unique on the page where the item's own key can repeat. */
+export type PlacedItem = { key: string; item: Item };
+
+/** The item cards among `cards`, in order. */
+export function itemCards(cards: Card[]): PlacedItem[] {
+  return cards.flatMap((card) => (card.kind === "item" ? [{ key: card.key, item: card.item }] : []));
+}
+
 export function orderCards(brand: Brand): Card[] {
   const cards: Card[] = [];
   if (brand.status !== null || brand.client !== null || brand.summary !== "" || brand.hub_problem !== null) {

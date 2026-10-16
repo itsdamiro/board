@@ -13,6 +13,11 @@ export interface Item {
   date: string | null; // `YYYY-MM-DDTHH:MM`, from the image id (docs/reference/API.md)
 }
 
+/** What to call an item in a label, a picture's alternative text or a question: its description, or "Image". */
+export function itemWords(item: Item): string {
+  return item.description !== "" ? item.description : "Image";
+}
+
 export interface Panel {
   title: string;
   text: string;

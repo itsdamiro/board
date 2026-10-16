@@ -29,6 +29,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const typedField = useRef<HTMLInputElement>(null);
+  const settled = useRef(false); // the address field was closed by Enter or Escape, so the blur that may follow takes nothing
   const live = useRef(queue);
   useEffect(() => {
     live.current = queue;
@@ -76,16 +77,16 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
   }, [ready]);
 
   useEffect(() => {
-    if (typing) typedField.current?.focus(); // the link button opens the field and typing starts there
+    if (!typing) return;
+    settled.current = false;
+    typedField.current?.focus(); // the link button opens the field and typing starts there
   }, [typing]);
 
   useEffect(() => () => live.current.forEach((queued) => URL.revokeObjectURL(queued.url)), []);
 
-  function dropFirst() {
-    const first = queue[0];
-    if (first === undefined) return;
-    URL.revokeObjectURL(first.url);
-    setQueue((current) => current.slice(1));
+  function drop(queued: Queued) {
+    URL.revokeObjectURL(queued.url);
+    setQueue((current) => current.filter((one) => one !== queued));
   }
 
   function takeTyped() {
@@ -94,6 +95,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
       setError("That is not a web address (it starts with http:// or https://).");
       return;
     }
+    settled.current = true;
     setSource(address);
     setTyping(false);
     setTyped("");
@@ -106,6 +108,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
       event.preventDefault(); // Enter here sets the address; it does not add the item
       takeTyped();
     } else if (event.key === "Escape") {
+      settled.current = true;
       setTyping(false);
       setTyped("");
     }
@@ -116,8 +119,9 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
     if (busy) return;
     setBusy(true);
     setError(null);
+    const sent = queue[0]; // by identity: the picture may be removed while it is on its way, and the next one must stay
     try {
-      await addItem(slug, { description, source, image: queue[0]?.file ?? null });
+      await addItem(slug, { description, source, image: sent?.file ?? null });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The item could not be added.");
       setBusy(false);
@@ -125,7 +129,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
     }
     setDescription("");
     if (!keepSource) setSource(null);
-    dropFirst();
+    if (sent !== undefined) drop(sent);
     setBusy(false);
     onAdded();
     input.current?.focus();
@@ -144,7 +148,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
           {first !== undefined && (
             <div className="relative">
               <img src={first.url} alt="Preview of the file to add" className="max-h-64 w-full rounded-md border border-border object-contain" />
-              <button type="button" aria-label="Remove image" title="Remove image" onClick={dropFirst} className={`${ICON} absolute top-2 right-2 bg-card shadow-md`}>
+              <button type="button" aria-label="Remove image" title="Remove image" onClick={() => drop(first)} className={`${ICON} absolute top-2 right-2 bg-card shadow-md`}>
                 <X aria-hidden="true" className="size-4" />
               </button>
               {queue.length > 1 && (
@@ -184,7 +188,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
               value={typed}
               onChange={(event) => setTyped(event.target.value)}
               onKeyDown={onTypedKey}
-              onBlur={() => typed.trim() !== "" && takeTyped()}
+              onBlur={() => !settled.current && typed.trim() !== "" && takeTyped()}
               autoComplete="off"
               placeholder="https://… then Enter"
               className="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"

@@ -506,6 +506,82 @@ describe("the cards", () => {
       expect((await within(dialog).findByRole("alert")).textContent).toContain("changed since it was shown");
       expect(screen.getByText("first", { selector: "li p" })).toBeTruthy();
     });
+
+    /** Wraps the fake `fetch`: `change` may answer a call itself, or return nothing to let the fake answer. */
+    function intercept(change: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> | undefined) {
+      const inner = globalThis.fetch;
+      vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => change(input, init) ?? inner(input, init)));
+      return inner;
+    }
+    const answer = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
+
+    it("reads the brand again when the server removed the block but could not remove its files, and keeps its message up", async () => {
+      two();
+      const inner = intercept((input, init) => {
+        if (init?.method !== "DELETE") return undefined;
+        return inner(input, init).then(() => answer(500, { error: "the item was removed from the note but its image files could not be removed" })); // removed, then refused
+      });
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "Delete first" }));
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+      expect((await within(dialog).findByRole("alert")).textContent).toContain("image files could not be removed");
+      await waitFor(() => expect(screen.queryByText("first", { selector: "li p" })).toBeNull());
+      expect(screen.getByRole("alert").textContent).toContain("image files could not be removed"); // the question is still up, with the words
+      expect(screen.getByText("second", { selector: "li p" })).toBeTruthy();
+    });
+
+    it("drops the picks at once when their deletion went through, without waiting for the brand to be read again", async () => {
+      installServer([brandView("alpha", {}, [item({ key: "a", description: "first" }), item({ key: "b", description: "second" })])]);
+      let deleted = false;
+      intercept((input, init) => {
+        if (init?.method === "DELETE") deleted = true;
+        return deleted && init?.method === undefined && String(input) === "/api/brands/alpha" ? new Promise<Response>(() => {}) : undefined; // the next read never comes
+      });
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByText("first", { selector: "li p" }), { shiftKey: true });
+      fireEvent.click(screen.getByRole("button", { name: "Delete 1" }));
+      fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+    });
+
+    it("asks about two picked blocks with the same text without a console error", async () => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      installServer([brandView("alpha", {}, [item({ key: "same", description: "twice" }), item({ key: "same", description: "twice" })])]);
+      render(<App />);
+      await shown("alpha");
+      screen.getAllByText("twice", { selector: "li p" }).forEach((words) => fireEvent.click(words, { shiftKey: true }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete 2" }));
+      const dialog = await screen.findByRole("dialog", { name: "Delete 2 items?" });
+      expect(within(dialog).getAllByText("twice")).toHaveLength(2);
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it("leaves Escape and the + and - keys to an open viewer, and to a field being typed in", async () => {
+      installServer([brandView("alpha", {}, [item({ key: "a", description: "first", image: "/img/a.png", thumb: "/t/a.png" }), item({ key: "b", description: "second" })])]);
+      render(<App />);
+      await shown("alpha");
+      const columns = () => screen.getByRole("status", { name: "Columns shown" }).textContent;
+      const selected = () => screen.queryByRole("status", { name: "Selection" })?.textContent;
+      fireEvent.click(screen.getByText("second", { selector: "li p" }), { shiftKey: true });
+      fireEvent.click(screen.getByRole("button", { name: "View first" }));
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.keyDown(dialog, { key: "+" });
+      expect(columns()).toBe("3"); // the viewer is open, so the key is not the columns'
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(selected()).toContain("1 selected"); // Escape closed the viewer and nothing else
+      document.dispatchEvent(pasteEvent([png()]));
+      await screen.findByLabelText("Description");
+      fireEvent.click(screen.getByRole("button", { name: "Add the address of the original" }));
+      fireEvent.keyDown(screen.getByLabelText("Address of the original"), { key: "Escape" });
+      expect(selected()).toContain("1 selected"); // Escape in a field closed the field and nothing else
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(selected()).toBeUndefined();
+    });
   });
 
   it("calls an image with no description Image", async () => {
@@ -558,7 +634,7 @@ describe("the cards", () => {
     await shown("alpha");
     const columns = () => screen.getByRole("list", { name: "Cards" }).style.columns;
     expect(screen.getByRole("status", { name: "Columns shown" }).textContent).toBe("3"); // jsdom's window is 1024 px wide
-    expect(columns()).toBe("18rem");
+    expect(columns()).toBe("3");
     fireEvent.click(screen.getByRole("button", { name: "More columns" }));
     expect(columns()).toBe("4");
     expect(screen.getByRole("status", { name: "Columns shown" }).textContent).toBe("4");
@@ -831,6 +907,23 @@ describe("adding an item", () => {
     expect(screen.queryByRole("img", { name: "Preview of the file to add" })).toBeNull();
     expect(screen.getByText("paste / drop image here")).toBeTruthy();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
+  });
+
+  it("keeps the next queued image when the one being sent is removed before the server answers", async () => {
+    await ready();
+    const inner = globalThis.fetch;
+    let answer: (() => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => (init?.method === "POST" ? new Promise<Response>((resolve) => { answer = () => resolve(inner(input, init)); }) : inner(input, init))));
+    document.dispatchEvent(dropEvent([png(), png()]));
+    await screen.findByText("Image 1 of 2");
+    const field = screen.getByLabelText("Description");
+    fireEvent.change(field, { target: { value: "one" } });
+    fireEvent.submit(field.closest("form")!);
+    await waitFor(() => expect(answer).toBeDefined()); // the first is on its way
+    fireEvent.click(screen.getByRole("button", { name: "Remove image" }));
+    await act(async () => answer?.());
+    await screen.findByText("one", { selector: "li p" });
+    expect(screen.getByRole("img", { name: "Preview of the file to add" })).toBeTruthy(); // the second was never sent and stays
   });
 
   it("shows the server's refusal and keeps what was typed, so it can be sent again", async () => {
