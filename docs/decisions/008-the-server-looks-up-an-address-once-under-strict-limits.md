@@ -65,3 +65,24 @@ Asked of the owner on 2026-10-16, who took all four recommendations ("Take all f
 - **A headless browser to capture the page.** Runs the page's script and is the "screenshot of a page by itself" that decision 7 rules out. It becomes right for the optional page-capture button listed as a later item, with its own record.
 - **A link-preview service such as a hosted API.** It sends every saved address to a third party. Never for client work.
 - **A third-party fetching or parsing library.** The standard library is enough, and each dependency needs its own record (ADR 001, decision 11). It becomes right if parsing real pages proves too brittle with `html.parser`.
+
+## Amendment (2026-10-17): a NAT64 address is public when the IPv4 address inside it is
+
+**Accepted by the owner on 2026-10-17, as drafted ("Accepted as drafted").**
+
+Context: the owner's first two real lookups on 2026-10-17 both failed with "address that is not on the public internet". The owner's network answers name lookups with DNS64: next to a site's IPv4 address it adds a synthesized IPv6 address in `64:ff9b::/96` (the well-known NAT64 prefix, RFC 6052), whose last 32 bits are that same IPv4 address. Ordinary public sites such as github.com resolve this way, checked on 2026-10-17 with the same `getaddrinfo` call the server uses. Decision 3 refuses the whole prefix, because an IPv4 address hides inside it and `64:ff9b::7f00:1` would otherwise reach loopback through a translator, and it requires every address a name gives to be public. So on this network every site that has an IPv4 address fails, and the feature never works.
+
+Decision 3 changes in one place:
+
+1. **A NAT64 address is judged by the IPv4 address inside it.** An address in `64:ff9b::/96` is public when its last 32 bits, read as an IPv4 address, pass the check IPv4 addresses already pass (global, not multicast, not carrier-grade, and so on). `64:ff9b::808:808` is accepted; `64:ff9b::7f00:1` (loopback), `64:ff9b::a00:1` (private), `64:ff9b::a9fe:a9fe` (the metadata address) and the rest of the refused IPv4 ranges stay refused when written this way.
+2. **Everything else in decision 3 stands.** Every address the name gives must still be public, so one non-public address in an answer still refuses the lookup. The IPv4-compatible form (`::/96`), 6to4 (`2002::/16`), Teredo, the local-use NAT64 prefix (`64:ff9b:1::/48`), IPv4-mapped addresses and the rest stay refused. The connection is still made to the address that was checked, with the name as `Host` and the certificate's name, so nothing about redirects, bounds, ports or what is read changes. The code change is the one function that judges an address, and no dependency.
+
+Consequences: a lookup works on a network that translates IPv6 to IPv4 and on a plain one alike. The machine's connection to a NAT64 address goes through the network's own translator, which forwards to the checked IPv4 address; a translator can reach what the network lets it, but decision 3 has already required that address to be public, so the app asks it for nothing private. A hostile DNS server could answer with a NAT64 address whose IPv4 part is public, which it could equally do with any public address, so it gains nothing new. On a network with no translator the address does not connect and the next one is tried, as today.
+
+Tests: `tests/test_lookup.py` moves `64:ff9b::808:808` from the refused list to the accepted one, and adds the refused embedded forms above and `64:ff9b:1::1`, a mixed answer (one NAT64 address with a public IPv4 part and one private) that is refused, and a changed DNS answer between the check and the connection that still cannot redirect it. The rule is checked against a weakened version with `scripts/mutate.py` (decision 12): a version that accepts the whole prefix must fail a test. No test reaches the real internet. `docs/reference/GOTCHAS.md` gets an entry saying that a lookup refused as "not on the public internet" on a network with DNS64 was this.
+
+Alternatives rejected:
+
+- **Keep refusing the prefix, and ask only for IPv4 addresses.** Resolving with `AF_INET` would skip the synthesized address, is a smaller change and cannot reach anything through a translator. It fails for a site or a network that has only IPv6, and the app would then be silent about why. It becomes right if reading the embedded address proves brittle, or if IPv6-only is never wanted.
+- **Drop the non-public addresses and use the public ones left.** It makes a mixed answer work, but it was the rule "every address must be public" that makes a name that answers with both a private and a public address refuse. It becomes right only if real sites are found to answer that way.
+- **A setting that allows the whole prefix.** The owner would carry a switch that reopens loopback and the local network through a translator. Never.

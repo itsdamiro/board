@@ -58,6 +58,11 @@
 - **Cause:** the disk is case-insensitive, so an import of `./Cards` can resolve to either file.
 - **Do this:** never give a component and a module the same name apart from case; this repository calls the module `cardOrder.ts`.
 
+### Every lookup is refused as "not on the public internet" on a network with DNS64
+- **Symptom:** an address is added but no title or preview comes, and the server prints `address lookup of the page failed: address that is not on the public internet`, for ordinary public sites.
+- **Cause:** the network's DNS adds a synthesized IPv6 address in `64:ff9b::/96` (NAT64) next to a site's IPv4 address. Until ADR 008's amendment of 2026-10-17 the check refused that whole prefix, and one refused address refuses the name. Now such an address is judged by the IPv4 address in its last 32 bits (`_is_public` in `board/lookup.py`).
+- **Do this:** to see what a name gives, run `.venv/bin/python -c "import socket; print([a[4][0] for a in socket.getaddrinfo('example.com', 443, type=socket.SOCK_STREAM)])"`; an address starting `64:ff9b::` is NAT64, and the last two groups are the IPv4 address in hex. If the lookup is still refused, one of the other addresses is not public, and that is the rule working.
+
 ## 2. Recipes
 
 None yet.

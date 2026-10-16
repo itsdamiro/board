@@ -47,9 +47,12 @@ _PAGE_ACCEPT = "text/html,application/xhtml+xml"
 _PREVIEW_ACCEPT = "image/png,image/jpeg,image/webp,image/gif"
 _REDIRECTS = (301, 302, 303, 307, 308)
 _HOST = re.compile(r"[a-z0-9_-]+(\.[a-z0-9_-]+)*\.?")
-# Python calls these global, but an IPv4 address hides inside them (the old IPv4-compatible form, NAT64). Carrier-grade, Teredo, 6to4
-# and the rest are already not global for it.
-_NOT_PUBLIC = tuple(ipaddress.ip_network(n) for n in ("::/96", "64:ff9b::/96"))
+# Python calls this global, but an IPv4 address hides inside it (the old IPv4-compatible form). Carrier-grade, Teredo, 6to4 and the
+# rest are already not global for it.
+_NOT_PUBLIC = (ipaddress.ip_network("::/96"),)
+# NAT64 (ADR 008, amendment of 2026-10-17): the network's translator forwards to the IPv4 address in the last 32 bits, so that address
+# is the one judged.
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
 _DIRECTION_CONTROLS = frozenset("؜‎‏‪‫‬‭‮⁦⁧⁨⁩")
 
 
@@ -94,6 +97,8 @@ def _is_public(ip: str) -> bool:
         return False
     if addr.version == 6 and addr.ipv4_mapped is not None:
         return False
+    if addr in _NAT64:
+        return _is_public(str(ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)))
     return addr.is_global and not addr.is_multicast and not any(addr in net for net in _NOT_PUBLIC)
 
 

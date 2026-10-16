@@ -21,6 +21,7 @@ from tests.helpers import make_image
 
 PUBLIC = "93.184.216.34"
 OTHER_PUBLIC = "151.101.1.69"
+NAT64_PUBLIC = "64:ff9b::5db8:d822"  # the well-known NAT64 prefix with 93.184.216.34 inside
 
 
 def page(head="", body="", title=None):
@@ -67,7 +68,9 @@ class Site:
     def __init__(self):
         self.routes, self.requests, self.connects, self.resolved = {}, [], [], []
         self.names = {"good.test": [PUBLIC], "other.test": [OTHER_PUBLIC], "evil.test": ["10.0.0.5"], "mixed.test": [PUBLIC, "10.0.0.5"],
-                      "localhost": ["127.0.0.1"], "loop6.test": ["::1"]}
+                      "localhost": ["127.0.0.1"], "loop6.test": ["::1"],
+                      "nat64.test": [NAT64_PUBLIC, PUBLIC], "nat64-private.test": ["64:ff9b::a00:1"],
+                      "nat64-mixed.test": [NAT64_PUBLIC, "64:ff9b::7f00:1"]}
         self.release = threading.Event()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.server.daemon_threads = True
@@ -122,6 +125,7 @@ class RefusedAddressesTest(LookupCase):
             "http://192.168.1.1/", "http://169.254.169.254/latest/meta-data/", "http://100.64.0.1/", "http://0.0.0.0/",
             "http://[fd00::1]/", "http://[fe80::1]/", "http://[::ffff:127.0.0.1]/", "http://[::ffff:93.184.216.34]/",
             "http://224.0.0.1/", "http://[ff02::1]/", "http://[2002:7f00:1::]/", "http://[64:ff9b::7f00:1]/", "http://[::7f00:1]/",
+            "http://[64:ff9b::a00:1]/", "http://[64:ff9b::a9fe:a9fe]/", "http://[64:ff9b:1::1]/", "http://nat64-private.test/", "http://nat64-mixed.test/",
             "http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/", "http://evil.test/", "http://mixed.test/",
         ):
             with self.subTest(address=address):
@@ -174,6 +178,7 @@ class RefusedAddressesTest(LookupCase):
 
     def test_a_scope_on_an_address_is_refused_even_if_the_address_is_public(self):
         self.assertEqual(self.get("http://[2606:4700:4700::1111%25en0]/"), lookup.Found())
+        self.assertEqual(self.get("http://[64:ff9b::5db8:d822%25en0]/"), lookup.Found())
         self.assertEqual(self.site.connects, [])
 
     def test_a_name_that_does_not_resolve_gives_nothing(self):
@@ -185,14 +190,33 @@ class RefusedAddressesTest(LookupCase):
         self.assertEqual(self.site.connects, [])
 
     def test_which_addresses_count_as_public(self):
-        for ip in (PUBLIC, OTHER_PUBLIC, "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"):
+        for ip in (PUBLIC, OTHER_PUBLIC, "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888", NAT64_PUBLIC,
+                   "64:ff9b::808:808", "64:ff9b::6400:1"):
             with self.subTest(ip=ip):
                 self.assertTrue(lookup._is_public(ip))
         for ip in ("127.0.0.1", "0.0.0.0", "10.1.2.3", "172.31.0.1", "192.168.0.1", "169.254.0.1", "100.64.0.1", "100.127.255.255", "224.0.0.1",
                    "239.255.255.250", "255.255.255.255", "::1", "::", "fe80::1", "fc00::1", "fd12::1", "ff02::1", "::ffff:8.8.8.8",
-                   "2002:808:808::", "64:ff9b::808:808", "::808:808", "2001:0:0:0:0:0:0:1", "not an address", ""):
+                   "2002:808:808::", "64:ff9b::7f00:1", "64:ff9b::a00:1", "64:ff9b::a9fe:a9fe", "64:ff9b::6440:1", "64:ff9b::e000:1", "64:ff9b::ffff:ffff",
+                   "64:ff9b:1::808:808", "64:ff9b:1::1", "::808:808", "2001:0:0:0:0:0:0:1", "not an address", ""):
             with self.subTest(ip=ip):
                 self.assertFalse(lookup._is_public(ip))
+
+    def test_a_nat64_address_is_judged_by_the_ipv4_address_inside_it(self):
+        self.assertTrue(lookup._is_public("64:ff9b::808:808"))  # 8.8.8.8
+        self.assertTrue(lookup._is_public("64:ff9b::6400:1"))  # 100.0.0.1, just below carrier-grade space
+        self.assertFalse(lookup._is_public("64:ff9b::6440:1"))  # 100.64.0.1
+        self.assertFalse(lookup._is_public("64:ff9b:1::808:808"))  # the local-use prefix is not the well-known one
+        self.assertTrue(lookup._is_public("64:ff9b::1:7f00:1"))  # outside the /96 the last 32 bits mean nothing: an ordinary global address
+
+    def test_a_name_with_a_nat64_address_and_a_public_ipv4_one_is_looked_up_at_the_checked_address_after_one_resolution(self):
+        self.serve("/", ok(page(title="Hi")))
+        self.assertEqual(self.get("http://nat64.test/").title, "Hi")
+        self.assertEqual((self.site.resolved, self.site.connects), (["nat64.test"], [NAT64_PUBLIC]))
+
+    def test_a_nat64_address_written_in_the_address_is_looked_up_when_the_ipv4_inside_is_public(self):
+        self.serve("/", ok(page(title="Hi")))
+        self.assertEqual(self.get("http://[64:ff9b::5db8:d822]/").title, "Hi")
+        self.assertEqual(self.site.connects, [NAT64_PUBLIC])
 
     def test_the_address_just_outside_carrier_grade_space_is_public(self):
         self.assertTrue(lookup._is_public("100.63.255.255"))
