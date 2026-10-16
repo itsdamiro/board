@@ -17,9 +17,10 @@ from unittest import mock
 
 from PIL import Image
 
-from board import images, lookup
+from board import images, lookup, svg
 from tests.helpers import make_image
 
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path/></svg>'
 PUBLIC = "93.184.216.34"
 OTHER_PUBLIC = "151.101.1.69"
 NAT64_PUBLIC = "64:ff9b::5db8:d822"  # the well-known NAT64 prefix with 93.184.216.34 inside
@@ -788,6 +789,7 @@ class PreviewTest(LookupCase):
         path, headers = self.site.requests[1]
         self.assertEqual(path, "/img")
         self.assertEqual(headers["accept"], lookup._PREVIEW_ACCEPT)
+        self.assertIn("image/svg+xml", headers["accept"].split(","))
         self.assertEqual(sorted(headers), ["accept", "accept-encoding", "connection", "host", "user-agent"])
         self.assertEqual(headers["accept-encoding"], "identity")
 
@@ -796,12 +798,37 @@ class PreviewTest(LookupCase):
         self.assertEqual(self.with_image(make_image("jpg"), "").preview_ext, "jpg")
 
     def test_something_that_is_not_an_image_is_ignored(self):
-        for data in (b"<svg xmlns='http://www.w3.org/2000/svg'/>", b"<html></html>", b"%PDF-1.7", b"", b"\x89PNG\r\n\x1a\nbut not really", b"GIF89a"):
+        for data in (b"<html></html>", b"%PDF-1.7", b"", b"\x89PNG\r\n\x1a\nbut not really", b"GIF89a"):
             with self.subTest(data=data[:12]):
                 self.assertEqual(self.with_image(data), lookup.Found("T"))
 
-    def test_an_svg_by_content_type_is_ignored(self):
-        self.assertEqual(self.with_image(b"<svg/>", "image/svg+xml"), lookup.Found("T"))
+    def test_an_svg_is_known_by_its_content_and_kept_as_it_came(self):
+        for content_type in ("image/svg+xml", "text/plain", "image/png", ""):
+            with self.subTest(content_type=content_type):
+                found = self.with_image(SVG, content_type)
+                self.assertEqual((found.title, found.preview, found.preview_ext), ("T", SVG, "svg"))
+
+    def test_an_svg_that_fails_the_check_is_refused_whole_and_the_next_candidate_is_tried(self):
+        bad = SVG.replace(b"<path/>", b"<script>alert(1)</script>")
+        self.serve("/", ok(page('<link rel="icon" href="/bad.svg"><link rel="icon" href="/ok.png">', title="T")))
+        self.serve("/bad.svg", ok(bad, "image/svg+xml"))
+        self.serve("/ok.png", ok(make_image("png")))
+        found = self.get()
+        self.assertEqual((found.title, found.preview_ext), ("T", "png"))
+        self.assertEqual([path for path, _ in self.site.requests], ["/", "/bad.svg", "/ok.png"])
+        self.assertEqual(self.with_image(bad, "image/svg+xml"), lookup.Found("T"))
+
+    def test_an_svg_over_the_svg_limit_is_refused_though_under_the_icon_limit(self):
+        big = SVG.replace(b"<path/>", b"<!--" + b"x" * svg.MAX_BYTES + b"--><path/>")
+        self.assertLess(len(big), lookup.PREVIEW_BYTES)
+        self.assertEqual(self.with_image(big, "image/svg+xml"), lookup.Found("T"))
+
+    def test_the_log_names_why_an_svg_was_refused_and_not_the_address(self):
+        with self.assertLogs("board.lookup", "WARNING") as logged:
+            self.with_image(SVG.replace(b"<path/>", b"<foreignObject/>"), "image/svg+xml")
+        self.assertEqual(len(logged.records), 1)
+        self.assertIn("an SVG with a foreignObject element is not taken", logged.output[0])
+        self.assertNotIn("example", logged.output[0])
 
     def test_a_preview_over_the_limit_is_ignored_and_one_at_the_limit_is_taken(self):
         data = make_image("png", (40, 30))
@@ -878,15 +905,16 @@ class PreviewTest(LookupCase):
             self.get()
         self.assertEqual([path for path, _ in self.site.requests], ["/", "/a.png", "/b.png", "/c.png", "/d.png", "/favicon.ico"])
 
-    def test_icons_of_other_kinds_and_svg_icons_are_not_candidates(self):
+    def test_icons_of_other_kinds_are_not_candidates_and_svg_icons_are(self):
         head = (
             '<link rel="mask-icon" href="/mask.png"><link rel="fluid-icon" href="/fluid.png"><link rel="stylesheet" href="/x.css">'
             '<link rel="icon" type="image/svg+xml" href="/a.png"><link rel="icon" href="/b.SVG?v=1"><link rel="icon" href="">'
             '<link rel="icon" href="/ok.png">'
         )
         self.serve("/", ok(page(head)))
-        self.get()
-        self.assertEqual([path for path, _ in self.site.requests], ["/", "/ok.png", "/favicon.ico"])
+        with mock.patch.object(lookup, "MAX_ICON_TRIES", 10):
+            self.get()
+        self.assertEqual([path for path, _ in self.site.requests], ["/", "/a.png", "/b.SVG?v=1", "/ok.png", "/favicon.ico"])
 
     def test_at_most_three_candidates_are_asked_for(self):
         self.serve("/", ok(page("".join(f'<link rel="icon" href="/{n}.png">' for n in range(6)))))

@@ -645,6 +645,25 @@ class LookupRouteTest(ServerCase):
         self.assertEqual(body, self.lookup.return_value.preview)
         self.assertEqual((item["preview"]["width"], item["preview"]["height"]), (900, 450))
 
+    def test_an_svg_preview_is_served_as_an_image_that_a_page_opened_on_it_cannot_run(self):
+        svg_icon = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 30"><path/></svg>'
+        self.lookup.return_value = lookup.Found("A page", svg_icon, "svg")
+        _, item = self.post()
+        self.assertTrue(item["preview"]["url"].endswith(".svg"))
+        self.assertEqual((item["preview"]["width"], item["preview"]["height"]), (40, 30))
+        status, response, body = self.call("GET", item["preview"]["url"])
+        self.assertEqual((status, body), (200, svg_icon))
+        self.assertEqual(response.getheader("Content-Type"), "image/svg+xml")
+        self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(response.getheader("Content-Security-Policy"), server.SVG_CSP)
+        self.assertEqual(server.SVG_CSP.split(";")[0], "sandbox")  # no allow-scripts, no allow-same-origin: an opaque origin that runs nothing
+        self.assertNotIn("allow-", server.SVG_CSP)
+
+    def test_only_an_svg_gets_the_svg_policy(self):
+        _, item = self.post()
+        _, response, _ = self.call("GET", item["preview"]["url"])
+        self.assertEqual(response.getheader("Content-Security-Policy"), server.CSP)
+
     def test_a_preview_that_is_not_kept_a_brand_that_is_not_there_and_a_bad_name_are_404(self):
         _, item = self.post()
         url = item["preview"]["url"]

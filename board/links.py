@@ -1,7 +1,7 @@
 """What an address lookup kept: the title and the preview thumbnail, in `Board/<slug>/links/` (ADR 008, decisions 7, 8 and 10).
 
 An address is named by the first 16 hex characters of the SHA-256 of its exact text. `<hash>.json` holds
-`{"title", "preview", "fetched"}` (`preview` is the thumbnail's extension or null) and `<hash>.<ext>` is the thumbnail. Nothing
+`{"title", "preview", "fetched"}` (`preview` is the icon's extension or null) and `<hash>.<ext>` is the icon's thumbnail, or the SVG itself. Nothing
 here touches a note. What is read back is treated as untrusted: the folder may be edited by hand, so a file that is not
 what this module writes is as good as missing, and a link is never followed.
 """
@@ -18,9 +18,10 @@ from urllib.parse import quote
 
 from PIL import Image
 
-from board import images, lookup
+from board import images, lookup, svg
 from board.vault import VaultError
 
+ICON_TYPES = {**images.CONTENT_TYPES, "svg": "image/svg+xml"}  # what a lookup may keep; a pasted image is never an SVG
 MAX_JSON = 4096  # a title of 200 characters is under 2 KB even escaped; more than this is not ours
 
 
@@ -51,7 +52,7 @@ def _read_json(folder: str, name: str) -> dict | None:
     if not isinstance(data, dict):
         return None
     title, preview = data.get("title"), data.get("preview")
-    if not (title is None or (isinstance(title, str) and len(title) <= lookup.TITLE_CHARS)) or preview not in (None, *images.CONTENT_TYPES):
+    if not (title is None or (isinstance(title, str) and len(title) <= lookup.TITLE_CHARS)) or preview not in (None, *ICON_TYPES):
         return None
     return {"title": title, "preview": preview}
 
@@ -80,16 +81,22 @@ def read(vault: str, slug: str, address: str) -> Link | None:
         return Link(data["title"], None, None, None)
     name = name_of(address)
     path = os.path.join(folder, f"{name}.{data['preview']}")
-    size = None
-    if os.path.isfile(path) and not os.path.islink(path):
-        try:
-            with Image.open(path) as image:
-                size = image.size
-        except (OSError, ValueError):
-            size = None
+    size = _size(path, data["preview"]) if os.path.isfile(path) and not os.path.islink(path) else None
     if size is None:  # the picture is gone or unreadable: the title still shows
         return Link(data["title"], None, None, None) if data["title"] else None
     return Link(data["title"], f"/api/brands/{quote(slug, safe='')}/links/{name}.{data['preview']}", size[0], size[1])
+
+
+def _size(path: str, ext: str) -> tuple[int, int] | None:
+    """The size of a kept icon, or None if it is unreadable (an SVG is checked again: the folder may have been edited by hand)."""
+    try:
+        if ext == "svg":
+            with open(path, "rb") as f:
+                return svg.check(f.read(svg.MAX_BYTES + 1))
+        with Image.open(path) as image:
+            return image.size
+    except (OSError, ValueError):  # ImageRefused, which SvgRefused is, is a ValueError
+        return None
 
 
 def path_of(vault: str, slug: str, name: str, ext: str) -> str | None:
@@ -134,6 +141,6 @@ def remove(vault: str, slug: str, address: str) -> None:
     if not folder:
         return
     name = name_of(address)
-    for ext in ("json", *images.CONTENT_TYPES):
+    for ext in ("json", *ICON_TYPES):
         with contextlib.suppress(FileNotFoundError):
             os.unlink(os.path.join(folder, f"{name}.{ext}"))

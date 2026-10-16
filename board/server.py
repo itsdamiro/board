@@ -32,6 +32,7 @@ from board.moodboard import MoodboardError
 
 IMAGE_CACHE = "private, max-age=31536000, immutable"  # an image is named by its id and never changes; a deleted id is never made again
 CSP = "default-src 'self'; img-src 'self' blob:"  # ADR 002, decision 6: its own origin and blob: images, nothing else
+SVG_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'"  # ADR 008, amendment of 2026-10-17: an SVG opened as a page runs nothing
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist")  # ADR 002, decision 1
 PAGE_TYPES = {  # the only files the page route serves, each with its own type (nosniff makes a wrong one a broken script)
     ".html": "text/html; charset=utf-8",
@@ -43,7 +44,7 @@ PAGE_TYPES = {  # the only files the page route serves, each with its own type (
 MAX_BODY = images.MAX_BYTES * 4 // 3 + 64 * 1024  # a 25 MB image in base64, and the text around it
 _BRAND, _KEY = r"(?P<slug>[^/]+)", r"(?P<key>[0-9a-f]{64})"
 _IMAGE = rf"(?P<kind>images|thumbs)/(?P<id>{moodboard.ID_PATTERN})\.(?P<ext>{'|'.join(images.CONTENT_TYPES)})"
-_LINK = rf"links/(?P<name>[0-9a-f]{{16}})\.(?P<ext>{'|'.join(images.CONTENT_TYPES)})"
+_LINK = rf"links/(?P<name>[0-9a-f]{{16}})\.(?P<ext>{'|'.join(links.ICON_TYPES)})"
 ROUTES = [
     ("GET", re.compile(r"/api/brands"), "brands"),
     ("GET", re.compile(rf"/api/brands/{_BRAND}"), "brand"),
@@ -107,11 +108,11 @@ class Handler(BaseHTTPRequestHandler):
     server: "BoardServer"
     timeout = 30  # seconds a client may stay silent; else a stalled upload would hold its thread for good
 
-    def _send(self, status: HTTPStatus, body: bytes, content_type: str, cache: str = "no-store") -> None:
+    def _send(self, status: HTTPStatus, body: bytes, content_type: str, cache: str = "no-store", csp: str = CSP) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Content-Security-Policy", CSP)
+        self.send_header("Content-Security-Policy", csp)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", cache)
         self.end_headers()
@@ -185,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
         if not path:
             raise Failure(HTTPStatus.NOT_FOUND, "no such image")
         with open(path, "rb") as f:
-            self._send(HTTPStatus.OK, f.read(), images.CONTENT_TYPES[ext], IMAGE_CACHE)
+            self._send(HTTPStatus.OK, f.read(), links.ICON_TYPES[ext], IMAGE_CACHE, SVG_CSP if ext == "svg" else CSP)
 
     def _route_page(self, name: str) -> None:
         path = page_file(self.server.web_dir, name or "index.html")

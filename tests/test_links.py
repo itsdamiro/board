@@ -6,7 +6,7 @@ import json
 import os
 import unittest
 
-from board import images, links, lookup
+from board import images, links, lookup, svg
 from board.vault import VaultError
 from tests.helpers import VaultCase, make_image
 
@@ -150,7 +150,7 @@ class ReadTest(LinksCase):
     def test_a_record_that_is_not_what_the_app_writes_is_not_used(self):
         name = f"{links.name_of(ADDRESS)}.json"
         for content in (
-            "not json", "[]", "null", '{"title": 5, "preview": null}', '{"title": null, "preview": "svg"}',
+            "not json", "[]", "null", '{"title": 5, "preview": null}', '{"title": null, "preview": "bmp"}',
             '{"title": null, "preview": ["jpg"]}', json.dumps({"title": "x" * (lookup.TITLE_CHARS + 1), "preview": None}),
             json.dumps({"title": "x", "preview": None, "pad": "y" * 5000}), b"\xff\xfe",
         ):
@@ -246,3 +246,34 @@ class RemoveTest(LinksCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 20"><path/></svg>'
+
+
+class SvgIconTest(LinksCase):
+    def keep(self, data=SVG):
+        links.store(self.vault, "alpha", ADDRESS, lookup.Found("Kept", data, "svg"))
+        return os.path.join(self.folder(), f"{links.name_of(ADDRESS)}.svg")
+
+    def test_an_svg_is_stored_as_it_came_and_read_back_with_its_size(self):
+        path = self.keep()
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), SVG)
+        name = links.name_of(ADDRESS)
+        self.assertEqual(links.read(self.vault, "alpha", ADDRESS), links.Link("Kept", f"/api/brands/alpha/links/{name}.svg", 24, 20))
+        self.assertEqual(links.path_of(self.vault, "alpha", name, "svg"), path)
+
+    def test_an_svg_edited_by_hand_to_fail_the_check_is_as_good_as_missing(self):
+        path = self.keep()
+        for data in (SVG.replace(b"<path/>", b"<script/>"), b"not svg", b"", SVG + b"x" * svg.MAX_BYTES):
+            with self.subTest(data=data[:20]):
+                with open(path, "wb") as f:
+                    f.write(data)
+                self.assertEqual(links.read(self.vault, "alpha", ADDRESS), links.Link("Kept", None, None, None))
+
+    def test_remove_takes_the_svg_too(self):
+        path = self.keep()
+        links.remove(self.vault, "alpha", ADDRESS)
+        self.assertEqual(os.listdir(self.folder()), [])
+        self.assertFalse(os.path.exists(path))

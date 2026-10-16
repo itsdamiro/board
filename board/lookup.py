@@ -9,7 +9,7 @@ as `2130706433`, not with `user@`). The name is resolved here, every address it 
 made to the address that was checked, never to the name again, so a DNS answer that changes in between cannot redirect it.
 Each redirect (at most three, never https to http) is checked from the start. The bounds (decision 5): five seconds per
 connect and per read, eight for the whole lookup, 512 KB of a page read up to `</head>`, 1 MB of an icon that must be a
-PNG, JPEG, WebP, GIF or ICO. A page is read with `html.parser`, which runs nothing.
+PNG, JPEG, WebP, GIF or ICO, or an SVG that passes `svg.check`. A page is read with `html.parser`, which runs nothing.
 
 `_resolve`, `_connect` and `_tls_context` are the only seams: the tests replace them, so nothing reaches the network, and the
 checks around them are the ones the server runs.
@@ -33,7 +33,7 @@ import urllib.parse
 
 from PIL import Image
 
-from board import images
+from board import images, svg
 
 log = logging.getLogger("board.lookup")
 
@@ -50,7 +50,7 @@ TITLE_CHARS = 200
 USER_AGENT = "Board (local moodboard app)"
 _PAGE_TYPES = ("text/html", "application/xhtml+xml")
 _PAGE_ACCEPT = "text/html,application/xhtml+xml"
-_PREVIEW_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon"
+_PREVIEW_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,image/svg+xml"
 _ICO = b"\x00\x00\x01\x00"
 _REDIRECTS = (301, 302, 303, 307, 308)
 _HOST = re.compile(r"[a-z0-9_-]+(\.[a-z0-9_-]+)*\.?")
@@ -339,9 +339,7 @@ class _Head(html.parser.HTMLParser):
     def _link(self, values: dict[str, str | None]) -> None:
         rel = (values.get("rel") or "").lower().split()
         href = (values.get("href") or "").strip()
-        if not href or (values.get("type") or "").split(";")[0].strip().lower() == "image/svg+xml":
-            return
-        if urllib.parse.urlsplit(href).path.lower().endswith(".svg"):
+        if not href:
             return
         if "apple-touch-icon" in rel or "apple-touch-icon-precomposed" in rel:
             self.touch_icons.append(href)
@@ -383,7 +381,11 @@ def _read_head(body: bytes, content_type: str) -> tuple[str | None, list[str]]:
 
 
 def _icon(data: bytes) -> tuple[bytes, str]:
-    """(thumbnail bytes, extension) of an icon's bytes: an ICO becomes a PNG of its largest image, the rest as `images` makes them."""
+    """(thumbnail bytes, extension) of an icon's bytes: an ICO becomes a PNG of its largest image, an SVG that passes `svg.check`
+    is kept as it came, the rest as `images` makes them."""
+    if svg.looks_like(data):
+        svg.check(data)
+        return data, "svg"
     if not data.startswith(_ICO):
         ext = images.sniff(data)
         return images.thumbnail(data, ext), ext
@@ -405,6 +407,8 @@ def _preview(address: str, budget: _Budget) -> tuple[bytes, str]:
     _final, _type, data = _fetch(address, budget, _PREVIEW_ACCEPT, PREVIEW_BYTES, types=None, refuse_longer=True)
     try:
         return _icon(data)
+    except svg.SvgRefused as err:
+        raise _Failed(f"{err} is not taken") from err
     except images.ImageRefused as err:
         raise _Failed("not an image that is taken") from err
 
