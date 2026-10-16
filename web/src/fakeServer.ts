@@ -23,7 +23,7 @@ export function brandView(slug: string, over: Partial<Brand> = {}, items: Item[]
 }
 
 export function item(over: Partial<Item> = {}): Item {
-  return { key: "k1", text: "words", description: "words", source: null, image: null, thumb: null, width: null, height: null, date: null, ...over };
+  return { key: "k1", text: "words", description: "words", source: null, image: null, thumb: null, width: null, height: null, date: null, title: null, preview: null, ...over };
 }
 
 function json(status: number, body: unknown): Response {

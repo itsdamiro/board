@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Link2, X } from "lucide-react";
 import { addItem } from "./api";
 import { webAddress } from "./address";
+import { readLookup, writeLookup } from "./lookup";
 
 // Adds an item (ADR 001, decision 5; ADR 002, amendment on the cards): an image pasted or dropped on the page, an address
 // pasted or typed with the link button, a one-line description under the picture, and Enter. Empty, it is a dashed box that says where to paste. The page keeps no copy of
@@ -22,6 +23,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
   const [description, setDescription] = useState("");
   const [source, setSource] = useState<string | null>(null);
   const [keepSource, setKeepSource] = useState(false);
+  const [lookup, setLookup] = useState(readLookup); // ADR 008: the server looks up an address with no picture, unless unchecked
   const [typing, setTyping] = useState(false); // the field for an address typed, opened by the link button
   const [typed, setTyped] = useState("");
   const [queue, setQueue] = useState<Queued[]>([]);
@@ -73,6 +75,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
 
   const first = queue[0];
   const ready = first !== undefined || source !== null;
+  const lookingUp = source !== null && first === undefined; // the lookup is only made for an address with no picture of its own
   useEffect(() => {
     if (ready) input.current?.focus(); // the field appears when there is something to describe, and typing starts there
   }, [ready]);
@@ -122,7 +125,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
     setError(null);
     const sent = queue[0]; // by identity: the picture may be removed while it is on its way, and the next one must stay
     try {
-      await addItem(slug, { description, source, image: sent?.file ?? null });
+      await addItem(slug, { description, source, image: sent?.file ?? null, lookup: lookingUp ? lookup : undefined });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The item could not be added.");
       setBusy(false);
@@ -206,6 +209,22 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: () 
                 Keep for the next item
               </label>
             </div>
+          )}
+          {lookingUp && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={lookup}
+                onChange={(event) => {
+                  setLookup(event.target.checked);
+                  writeLookup(event.target.checked);
+                }}
+              />
+              Look up the page&apos;s title and preview
+            </label>
+          )}
+          {busy && lookingUp && lookup && (
+            <output className="text-sm text-muted-foreground">Looking up the page…</output>
           )}
         </div>
       )}

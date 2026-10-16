@@ -11,6 +11,14 @@ export interface Item {
   width: number | null;
   height: number | null;
   date: string | null; // `YYYY-MM-DDTHH:MM`, from the image id (docs/reference/API.md)
+  title: string | null; // the looked-up page's title (ADR 008), plain text; null with no lookup
+  preview: Preview | null; // the looked-up page's picture, served by the app
+}
+
+export interface Preview {
+  url: string;
+  width: number;
+  height: number;
 }
 
 /** What to call an item in a label, a picture's alternative text or a question: its description, or "Image". */
@@ -39,6 +47,7 @@ export interface NewItem {
   description: string;
   source: string | null;
   image: File | null;
+  lookup?: boolean; // whether the server may look the address up (ADR 008); left out (undefined is not serialised), the server's default (true) applies
 }
 
 export class ApiError extends Error {}
@@ -103,7 +112,7 @@ export async function addItem(slug: string, item: NewItem): Promise<Item> {
   const init = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ description: item.description, source: item.source, image }),
+    body: JSON.stringify({ description: item.description, source: item.source, image, lookup: item.lookup }),
   };
   return (await call(`/api/brands/${encodeURIComponent(slug)}/items`, init)) as Item;
 }

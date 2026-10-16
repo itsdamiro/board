@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { COLUMNS_KEY } from "./columns";
 import { BRAND_KEY } from "./lastBrand";
+import { LOOKUP_KEY } from "./lookup";
 import { brandView, dropEvent, installServer, item, pasteEvent, png } from "./fakeServer";
 import { STORAGE_KEY } from "./theme";
 
@@ -279,6 +280,70 @@ describe("the cards", () => {
     expect(within(cards[0]!).queryByRole("link", { name: "a quiet layout" })).toBeNull();
     expect(within(cards[0]!).getByRole("link", { name: "https://example.com/p" }).getAttribute("rel")).toBe("noopener noreferrer");
     expect(within(cards[1]!).getByText("a hand-written line")).toBeTruthy();
+  });
+
+  describe("a looked-up address (ADR 008)", () => {
+    const looked = (over = {}) =>
+      item({
+        key: "p",
+        description: "my words",
+        source: "https://example.com/p",
+        title: "The page's own title",
+        preview: { url: "/api/brands/alpha/links/0123456789abcdef.png", width: 640, height: 360 },
+        ...over,
+      });
+
+    it("shows the preview picture, then the owner's words, then the title apart from them, then the address", async () => {
+      installServer([brandView("alpha", {}, [looked()])]);
+      render(<App />);
+      await shown("alpha");
+      const card = within(screen.getByRole("list", { name: "Cards" })).getAllByRole("listitem")[1]!;
+      const picture = within(card).getByRole("img", { name: "The page's own title" });
+      expect(picture.getAttribute("src")).toBe("/api/brands/alpha/links/0123456789abcdef.png");
+      expect(picture.getAttribute("width")).toBe("640");
+      expect(picture.getAttribute("height")).toBe("360");
+      expect(picture.getAttribute("loading")).toBe("lazy");
+      expect(picture.closest("a, button")).toBeNull(); // no link, and the viewer does not open it
+      const title = within(card).getByText("The page's own title", { selector: "p" });
+      expect(title.className).toContain("text-muted-foreground");
+      expect(within(card).getByText("my words").className).not.toContain("text-muted-foreground");
+      expect(within(card).getByRole("link", { name: "https://example.com/p" })).toBeTruthy();
+      expect(within(card).queryByRole("button", { name: /^View/ })).toBeNull();
+    });
+
+    it("shows only a title, or only a preview, when the lookup got only that", async () => {
+      installServer([
+        brandView("alpha", {}, [
+          looked({ key: "t", description: "", text: "", preview: null, title: "Only a title" }),
+          looked({ key: "i", description: "", text: "", title: null }),
+        ]),
+      ]);
+      render(<App />);
+      await shown("alpha");
+      expect(screen.getByText("Only a title", { selector: "p" })).toBeTruthy();
+      expect(screen.getAllByRole("img", { name: "Preview" })).toHaveLength(1); // no title: the alternative text is "Preview"
+    });
+
+    it("shows a bare address as before when nothing was kept, and never a preview for an item with its own picture", async () => {
+      installServer([
+        brandView("alpha", {}, [
+          item({ key: "b", description: "bare", source: "https://example.com/b" }),
+          item({ key: "w", description: "own", image: "/api/brands/alpha/images/i.png", thumb: "/api/brands/alpha/thumbs/i.png", width: 10, height: 10, preview: { url: "/api/brands/alpha/links/aaaaaaaaaaaaaaaa.png", width: 1, height: 1 } }),
+        ]),
+      ]);
+      render(<App />);
+      await shown("alpha");
+      expect(screen.queryByRole("img", { name: "Preview" })).toBeNull();
+      expect(screen.getAllByRole("img").map((i) => i.getAttribute("src"))).toEqual(["/api/brands/alpha/thumbs/i.png"]);
+    });
+
+    it("shows a title that looks like markup as text", async () => {
+      installServer([brandView("alpha", {}, [looked({ title: "<b>bold</b> & more", preview: null })])]);
+      render(<App />);
+      await shown("alpha");
+      expect(screen.getByText("<b>bold</b> & more")).toBeTruthy();
+      expect(document.querySelector("b")).toBeNull();
+    });
   });
 
   describe("the viewer", () => {
@@ -820,7 +885,7 @@ describe("adding an item", () => {
     expect(words.defaultPrevented).toBe(false);
     fireEvent.submit(field.closest("form")!);
     await waitFor(() => expect(screen.queryByText("https://example.com/page")).toBeNull());
-    expect(server.calls.find((c) => c.method === "POST")?.body).toEqual({ description: "", source: "https://example.com/page", image: null });
+    expect(server.calls.find((c) => c.method === "POST")?.body).toEqual({ description: "", source: "https://example.com/page", image: null, lookup: true });
   });
 
   it("keeps the address for the next item when asked, and drops it when it is removed", async () => {
@@ -993,6 +1058,88 @@ describe("adding an item", () => {
     fireEvent.submit(form);
     await screen.findByText("once", { selector: "p" });
     expect(server.calls.filter((c) => c.method === "POST")).toHaveLength(1);
+  });
+
+  describe("the lookup of an address (ADR 008)", () => {
+    const LABEL = "Look up the page's title and preview";
+    async function withAddress() {
+      const { server } = await ready();
+      document.dispatchEvent(pasteEvent([], "https://example.com/page"));
+      await screen.findByText("https://example.com/page");
+      return server;
+    }
+    const posted = (server: { calls: Array<{ method: string; body: unknown }> }) => server.calls.find((c) => c.method === "POST")?.body;
+
+    it("offers a checkbox, checked, for an address with no picture, and sends it as lookup", async () => {
+      const server = await withAddress();
+      expect((screen.getByLabelText(LABEL) as HTMLInputElement).checked).toBe(true);
+      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
+      await waitFor(() => expect(posted(server)).toBeDefined());
+      expect(posted(server)).toMatchObject({ source: "https://example.com/page", image: null, lookup: true });
+    });
+
+    it("sends lookup false when unchecked, and remembers the choice for the next visit", async () => {
+      const server = await withAddress();
+      fireEvent.click(screen.getByLabelText(LABEL));
+      expect(window.localStorage.getItem(LOOKUP_KEY)).toBe("off");
+      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
+      await waitFor(() => expect(posted(server)).toBeDefined());
+      expect(posted(server)).toMatchObject({ lookup: false });
+      cleanup();
+      installServer([brandView("alpha")]);
+      render(<App />);
+      await shown("alpha");
+      document.dispatchEvent(pasteEvent([], "https://example.com/other"));
+      await screen.findByText("https://example.com/other");
+      expect((screen.getByLabelText(LABEL) as HTMLInputElement).checked).toBe(false);
+    });
+
+    it("is not offered, and not sent, when a picture is queued", async () => {
+      const server = await withAddress();
+      document.dispatchEvent(pasteEvent([png()]));
+      await screen.findByRole("img", { name: "Preview of the file to add" });
+      expect(screen.queryByLabelText(LABEL)).toBeNull();
+      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
+      await waitFor(() => expect(posted(server)).toBeDefined());
+      expect(posted(server)).not.toHaveProperty("lookup");
+    });
+
+    it("is not offered with no address", async () => {
+      await ready();
+      await withImage();
+      expect(screen.queryByLabelText(LABEL)).toBeNull();
+    });
+
+    it("says the page is being looked up while the add waits, and only when it is", async () => {
+      await withAddress();
+      const real = fetch as unknown as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+      let release: () => void = () => {};
+      const gate = new Promise<void>((done) => (release = done));
+      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "POST") await gate;
+        return real(input, init);
+      }));
+      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
+      expect((await screen.findByRole("status")).textContent).toBe("Looking up the page…");
+      release();
+      await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    });
+
+    it("does not say so when the lookup is unchecked", async () => {
+      await withAddress();
+      fireEvent.click(screen.getByLabelText(LABEL));
+      const real = fetch as unknown as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+      let release: () => void = () => {};
+      const gate = new Promise<void>((done) => (release = done));
+      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "POST") await gate;
+        return real(input, init);
+      }));
+      fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
+      await act(async () => {});
+      expect(screen.queryByRole("status")).toBeNull();
+      release();
+    });
   });
 
   it("does not carry a queued image to another brand", async () => {

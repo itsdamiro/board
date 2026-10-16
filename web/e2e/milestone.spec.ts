@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expect, test, type Board } from "./fixtures";
 import { watchProblems } from "./problems";
 
@@ -10,6 +11,7 @@ import { watchProblems } from "./problems";
 // clipboard is not reliable in a headless browser (ADR 006, decision 6).
 
 const BRAND = "sample-one";
+const ROOT = resolve(import.meta.dirname, "..", "..");
 const WIDTH = 64;
 const HEIGHT = 48;
 
@@ -68,6 +70,25 @@ function boardFiles(board: Board, slug = BRAND): string[] {
   const root = join(board.vault, "Board", slug);
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true, encoding: "utf8" }).filter((name) => /\.png$/.test(name)).sort();
+}
+
+/** Keeps a lookup for an address as the server would after a fetch (no test reaches the internet, ADR 008, decision 12): a title and a 64 by 40 picture. */
+function keepLookup(board: Board, address: string, title: string): void {
+  const code = [
+    "import io, sys",
+    "from PIL import Image",
+    "from board import links, lookup",
+    "buffer = io.BytesIO()",
+    "Image.new('RGB', (64, 40), (200, 60, 60)).save(buffer, 'PNG')",
+    "assert links.store(sys.argv[1], sys.argv[2], sys.argv[3], lookup.Found(sys.argv[4], buffer.getvalue(), 'png'))",
+  ].join("\n");
+  const made = spawnSync(join(ROOT, ".venv", "bin", "python"), ["-c", code, board.vault, BRAND, address, title], { cwd: ROOT, encoding: "utf8" });
+  if (made.status !== 0) throw new Error(`the lookup was not kept: ${made.stderr}`);
+}
+
+function linkFiles(board: Board): string[] {
+  const root = join(board.vault, "Board", BRAND, "links");
+  return existsSync(root) ? readdirSync(root).sort() : [];
 }
 
 for (const scheme of ["light", "dark"] as const) {
@@ -193,6 +214,61 @@ for (const scheme of ["light", "dark"] as const) {
 
       await expect(page.getByRole("link", { name: "https://example.com/inspiration" })).toBeVisible();
       expect(moodboard(board)).toMatch(/\n!\[\[[0-9a-z-]+\.png\]\]\na footer\n\[source\]\(https:\/\/example\.com\/inspiration\)\n$/);
+      expect(problems).toEqual([]);
+    });
+
+    test("an address with no picture offers the lookup, remembers it unchecked, and shows a kept title and preview on its card", async ({ page, board }) => {
+      const problems = watchProblems(page);
+      const address = "https://example.com/looked-up";
+      await pasteText(page, address);
+      const checkbox = page.getByLabel("Look up the page's title and preview");
+      await expect(checkbox).toBeChecked();
+      await checkbox.uncheck(); // so the server makes no request: no test reaches the internet
+      await page.getByLabel("Description").fill("a reference");
+      const sent = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/items"));
+      await page.getByLabel("Description").press("Enter");
+      expect((await sent).postDataJSON()).toEqual({ description: "a reference", source: address, image: null, lookup: false });
+      await expect(page.getByRole("link", { name: address })).toBeVisible();
+      expect(moodboard(board)).toMatch(/\na reference\n\[source\]\(https:\/\/example\.com\/looked-up\)\n$/);
+      expect(linkFiles(board)).toEqual([]);
+
+      // The owner's choice is kept for the next address, across a reload.
+      await page.reload();
+      await expect(page.getByRole("form", { name: "Add an item" })).toBeVisible(); // the page listens for a paste once its box is there
+      await pasteText(page, "https://example.com/another");
+      await expect(page.getByLabel("Look up the page's title and preview")).not.toBeChecked();
+
+      // What a lookup keeps is shown on the card: the picture (served by the app, so the policy lets it load), the owner's words, the title apart.
+      keepLookup(board, address, "The page's own title");
+      await page.reload();
+      const preview = page.getByRole("img", { name: "The page's own title" });
+      await expect(preview).toBeVisible();
+      await expect(preview).toHaveJSProperty("naturalWidth", 64);
+      const card = page.getByRole("listitem").filter({ has: preview });
+      await expect(card).toContainText("a reference");
+      await expect(card.getByText("The page's own title", { exact: true }).and(page.locator("p"))).toBeVisible();
+      await preview.click();
+      await expect(page.getByRole("dialog")).toHaveCount(0); // the viewer does not open a preview
+
+      // Deleting the item takes the kept lookup with it.
+      await card.hover();
+      await page.getByRole("button", { name: "Delete a reference" }).click();
+      await page.getByRole("dialog", { name: "Delete this item?" }).getByRole("button", { name: "Delete" }).click();
+      await expect(preview).toHaveCount(0);
+      expect(linkFiles(board)).toEqual([]);
+      expect(problems).toEqual([]);
+    });
+
+    test("an address on this computer is not looked up, and is added all the same", async ({ page, board }) => {
+      const problems = watchProblems(page);
+      await pasteText(page, "http://127.0.0.1/private"); // refused by the server before any connection (ADR 008, decision 3)
+      await expect(page.getByLabel("Look up the page's title and preview")).toBeChecked();
+      await page.getByLabel("Description").fill("a local page");
+      await page.getByLabel("Description").press("Enter");
+      await expect(page.getByRole("link", { name: "http://127.0.0.1/private" })).toBeVisible();
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      expect(moodboard(board)).toMatch(/\na local page\n\[source\]\(http:\/\/127\.0\.0\.1\/private\)\n$/);
+      expect(linkFiles(board)).toEqual([]);
       expect(problems).toEqual([]);
     });
 

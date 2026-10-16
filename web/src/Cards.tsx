@@ -17,6 +17,10 @@ function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) 
   const words = item.description !== "" ? item.description : item.source === null && item.image === null ? item.text : "";
   return (
     <>
+      {item.image === null && item.preview !== null && (
+        // The picture of a looked-up page (ADR 008): served by the app, not opened by the viewer, and no link.
+        <img src={item.preview.url} alt={item.title ?? "Preview"} width={item.preview.width} height={item.preview.height} loading="lazy" className="h-auto w-full" />
+      )}
       {item.thumb !== null && item.image !== null && (
         <button type="button" aria-label={`View ${itemWords(item)}`} onClick={(event) => onView(event.currentTarget)} className={`block w-full cursor-zoom-in ${LINK}`}>
           <img
@@ -32,6 +36,8 @@ function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) 
       {(words !== "" || item.source !== null) && (
         <div className="flex flex-col gap-1 p-3 text-sm">
           {words !== "" && <p className="whitespace-pre-wrap">{words}</p>}
+          {/* Another person's text, so muted and apart from the owner's words (ADR 002, amendment of 2026-10-17). */}
+          {item.title !== null && <p className="text-xs text-muted-foreground">{item.title}</p>}
           {item.source !== null && (
             <a href={item.source} target="_blank" rel="noopener noreferrer" className={`break-all font-mono text-xs text-muted-foreground underline ${LINK}`}>
               {item.source}
