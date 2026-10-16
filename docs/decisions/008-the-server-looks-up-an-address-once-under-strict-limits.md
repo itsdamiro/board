@@ -107,3 +107,28 @@ Alternatives rejected:
 - **Racing the addresses at once (happy eyeballs, RFC 8305).** The best behaviour for the user and the standard for browsers, but it opens several connections and needs threads, a second state to test and to bound. It becomes right if ordering and two seconds prove too slow or too brittle.
 - **Asking the system for IPv4 addresses only.** Smaller, but it fails for a site or a network that has only IPv6, including the NAT64 networks the first amendment serves. It becomes right if IPv6-only is never wanted.
 - **Keeping the order and raising the eight seconds.** The add would wait longer for every dead address, and the owner is waiting on the page meanwhile. Never.
+
+## Amendment (2026-10-17): the picture is the site's icon, not its `og:image`
+
+**Accepted by the owner on 2026-10-17, after asking for it in chat ("might as well use the favicon, not just a fallback") and accepting the draft ("Accepted").**
+
+Context: the owner's first real lookups on 2026-10-17 kept a title and no picture. Checked with the server's own code: one site's `og:image` is an SVG, which decision 5 ignores, and another's is served by an image host that answered 429 (a rate limit that lasts fifteen minutes); an earlier lookup of a large site took 6.2 s of the eight, nearly all of it the picture. The `og:image` is the part of a lookup that fails most, takes longest and cannot be predicted: it can be a banner, a photograph, a logo or a text on a colour, any size, and the card has to be built for all of them. A site's icon is small, fast, nearly always there and always the same kind of thing, so a card can be built for it.
+
+Decisions 5, 6 and 7 change in these places, and nothing else:
+
+1. **The picture is the page's icon.** `og:image` is no longer read or fetched. The candidates are, in this order: the page's `<link rel="apple-touch-icon">` (and `apple-touch-icon-precomposed`), then its `<link rel="icon">` (and `shortcut icon`, `alternate icon`), each group in the page's order, then `/favicon.ico` on the page's final address. A candidate whose `type` is `image/svg+xml` or whose path ends in `.svg` is skipped. The first candidate that gives an image is kept; at most three candidates are asked for, one request each, each through decisions 3 to 5 from the start (so each is resolved, checked and bounded like the page). Only `<link>` tags in the head are read, as before.
+2. **What counts as an icon.** PNG, JPEG, WebP and GIF as before, by the first bytes, and now also ICO (a `.ico` file, `00 00 01 00`), which Pillow decodes; its largest image is taken. The bytes are at most 1 MB (it was 5 MB for a preview), and the pixel limit of decision 5 applies before decoding. An ICO is kept as a PNG thumbnail; the others as before, never enlarged. The original is not kept.
+3. **What the API and the vault keep** does not change in shape: `preview` in the item and `preview` in `links/<hash>.json` now hold the icon, and `<hash>.<ext>` is its thumbnail. A lookup kept before this amendment holds an `og:image` thumbnail; it is shown as it is, in the new small place, until the item is deleted.
+4. **The page shows it small** (ADR 002, amendment of the same date), not as the picture of the card.
+5. **The log** says the HTTP status when a candidate is refused for it (for example `answer other than 200 (429)`), and still never the address.
+
+Consequences: a card gets the site's own mark next to its title instead of a picture that may be a banner or nothing. A lookup is faster, since an icon is small and the 5 MB download is gone, and it fails less. A site with no icon gets the title alone. An icon is a logo, so it is less informative than a screenshot; a page capture stays a later, separate decision (decision 4 of the alternatives, and ADR 001, decision 7). Up to three more requests are made per lookup than with one `og:image` (the same host usually, so at most one more name lookup), still inside the eight seconds.
+
+Tests: `tests/test_lookup.py` replaces the `og:image` cases with the icon cases: the order of the candidates; an SVG skipped for the next; `/favicon.ico` asked for last, after the links; at most three asked for; an ICO taken as a PNG, its largest image; the 1 MB limit exact; the pixel limit; a candidate on another host or through a redirect to a non-public address checked and refused; `og:image` no longer asked for; the status in the log. Each rule is checked against a weakened version with `scripts/mutate.py` (decision 12). No test reaches the real internet. `docs/reference/GOTCHAS.md` gets an entry for a card with a title and no icon.
+
+Alternatives rejected:
+
+- **`og:image`, with the icon as a fallback.** Keeps the larger picture where it works, but the card then has to be built for any size and shape, and the part that fails most stays. It becomes right if the owner wants the banner where a site has one.
+- **Both, the icon small and the `og:image` large.** Two pictures to fetch, store and lay out. Never for now.
+- **Rendering an SVG icon.** Needs a renderer (a new dependency with its own record) and runs a file's own markup. Sites that give only an SVG get the title alone.
+- **A screenshot of the page.** Needs a browser that runs the page; see the alternatives above and ADR 001, decision 7.

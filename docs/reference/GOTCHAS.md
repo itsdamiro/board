@@ -68,6 +68,11 @@
 - **Cause:** a name, often a content-delivery network's, gives several IPv6 addresses and then IPv4 ones. On a connection with no working IPv6 route each IPv6 address waits for its connect timeout, and the eight seconds of the lookup are gone before an IPv4 address is tried. Until ADR 008's second amendment of 2026-10-17 the addresses were tried in the order DNS gave them, each for five seconds; now IPv4 comes first and an attempt takes at most two seconds (`_open`, `ATTEMPT_TIMEOUT` in `board/lookup.py`).
 - **Do this:** to see which addresses answer, run `.venv/bin/python -c "import socket,time; [print(a[4][0], time.time()) for a in socket.getaddrinfo('example.com', 443, type=socket.SOCK_STREAM)]"` and connect to each with `socket.create_connection((ip, 443), 4)`, timing it. If every address fails or the connect takes over two seconds, the network is the cause and the item stays bare, as ADR 008 decision 9 says.
 
+### A card has a title and no icon
+- **Symptom:** an address is added with its title and no small icon, and the server prints `address lookup of the preview failed: ...` (nothing is printed when the guessed `/favicon.ico` is simply missing, 404).
+- **Cause:** since ADR 008's amendment of 2026-10-17 the picture is the page's icon, not its `og:image`. The candidates are the page's apple-touch-icon, then its icon links, then `/favicon.ico`, three tries at most, and an SVG icon is skipped. `answer other than 200 (429)` means the icon's host is rate limiting this computer (GitHub's asset host does, for fifteen minutes); `not an image that is taken` means the file is not a PNG, JPEG, WebP, GIF or ICO (or is over 1 MB); a site that gives only an SVG icon gets the title alone.
+- **Do this:** look at the page's head with `.venv/bin/python -c "import re,urllib.request as u; print(re.findall(r'<link[^>]*icon[^>]*>', u.urlopen('https://example.com').read(300000).decode('utf-8','replace'), re.I))"` (replace the address, and do not do it for an address behind a login), then fetch each candidate and read the status. An item that was kept without an icon is not looked up again (ADR 008, decision 1): delete it and add it again.
+
 ## 2. Recipes
 
 None yet.

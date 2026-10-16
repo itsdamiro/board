@@ -18,7 +18,7 @@ The vault is a folder of Markdown notes (Obsidian-style). This page is the contr
         2026-10-15-1432-a3f9.png        its thumbnail
       links/
         0123456789abcdef.json           what the app looked up for an address
-        0123456789abcdef.jpg            the thumbnail of that page's preview picture
+        0123456789abcdef.jpg            the thumbnail of that page's icon
     _unsorted/                          items added before a brand was chosen
 ```
 
@@ -47,7 +47,7 @@ A reader takes a first line that starts with `![[` as the image, a last line tha
 
 ## Address lookups
 
-When you add an address with no picture, the app fetches that page once (unless you untick the lookup for that item) and keeps its title and preview picture in `Board/<slug>/links/`. The files are named by the first 16 hex characters of the SHA-256 of the exact address: `<hash>.json` holds `{title, preview, fetched}`, and `<hash>.<ext>` is the preview's thumbnail (the original image is not kept). Nothing is written into the Moodboard note: a page's title is another person's text, so it is shown by the app and never becomes your description. Deleting an item removes these files too, unless another block in that Moodboard has the same address. Any tool that reads `Board/` must tolerate this folder.
+When you add an address with no picture, the app fetches that page once (unless you untick the lookup for that item) and keeps its title and icon in `Board/<slug>/links/`. The files are named by the first 16 hex characters of the SHA-256 of the exact address: `<hash>.json` holds `{title, preview, fetched}`, and `<hash>.<ext>` is the icon's thumbnail, always a PNG for an ICO file (the original is not kept; a thumbnail kept before ADR 008's amendment of 2026-10-17 is a larger `og:image`). Nothing is written into the Moodboard note: a page's title is another person's text, so it is shown by the app and never becomes your description. Deleting an item removes these files too, unless another block in that Moodboard has the same address. Any tool that reads `Board/` must tolerate this folder.
 
 ## What the app may write
 

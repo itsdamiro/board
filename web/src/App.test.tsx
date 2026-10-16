@@ -293,25 +293,29 @@ describe("the cards", () => {
         ...over,
       });
 
-    it("shows the preview picture, then the owner's words, then the title apart from them, then the address", async () => {
+    it("shows the owner's words, then the small icon with the title apart from them, then the address", async () => {
       installServer([brandView("alpha", {}, [looked()])]);
       render(<App />);
       await shown("alpha");
       const card = within(screen.getByRole("list", { name: "Cards" })).getAllByRole("listitem")[1]!;
-      const picture = within(card).getByRole("img", { name: "The page's own title" });
-      expect(picture.getAttribute("src")).toBe("/api/brands/alpha/links/0123456789abcdef.png");
-      expect(picture.getAttribute("width")).toBe("640");
-      expect(picture.getAttribute("height")).toBe("360");
-      expect(picture.getAttribute("loading")).toBe("lazy");
-      expect(picture.closest("a, button")).toBeNull(); // no link, and the viewer does not open it
+      const icon = card.querySelector("img")!;
+      expect(icon.getAttribute("src")).toBe("/api/brands/alpha/links/0123456789abcdef.png");
+      expect(icon.getAttribute("width")).toBe("32"); // drawn small whatever the stored size (ADR 002, amendment of 2026-10-17)
+      expect(icon.getAttribute("height")).toBe("32");
+      expect(icon.getAttribute("alt")).toBe(""); // the title beside it says what it is
+      expect(icon.getAttribute("loading")).toBe("lazy");
+      expect(icon.closest("a, button")).toBeNull(); // no link, and the viewer does not open it
       const title = within(card).getByText("The page's own title", { selector: "p" });
       expect(title.className).toContain("text-muted-foreground");
+      expect(icon.parentElement).toBe(title.parentElement); // beside the title
       expect(within(card).getByText("my words").className).not.toContain("text-muted-foreground");
-      expect(within(card).getByRole("link", { name: "https://example.com/p" })).toBeTruthy();
+      const link = within(card).getByRole("link", { name: "https://example.com/p" });
+      expect(icon.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(within(card).getByText("my words").compareDocumentPosition(icon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(within(card).queryByRole("button", { name: /^View/ })).toBeNull();
     });
 
-    it("shows only a title, or only a preview, when the lookup got only that", async () => {
+    it("shows only a title, or only an icon, when the lookup got only that", async () => {
       installServer([
         brandView("alpha", {}, [
           looked({ key: "t", description: "", text: "", preview: null, title: "Only a title" }),
@@ -321,10 +325,10 @@ describe("the cards", () => {
       render(<App />);
       await shown("alpha");
       expect(screen.getByText("Only a title", { selector: "p" })).toBeTruthy();
-      expect(screen.getAllByRole("img", { name: "Preview" })).toHaveLength(1); // no title: the alternative text is "Preview"
+      expect(screen.getAllByRole("img", { name: "Site icon" })).toHaveLength(1); // no title: the alternative text is "Site icon"
     });
 
-    it("shows a bare address as before when nothing was kept, and never a preview for an item with its own picture", async () => {
+    it("shows a bare address as before when nothing was kept, and never an icon for an item with its own picture", async () => {
       installServer([
         brandView("alpha", {}, [
           item({ key: "b", description: "bare", source: "https://example.com/b" }),
@@ -333,7 +337,7 @@ describe("the cards", () => {
       ]);
       render(<App />);
       await shown("alpha");
-      expect(screen.queryByRole("img", { name: "Preview" })).toBeNull();
+      expect(screen.queryByRole("img", { name: "Site icon" })).toBeNull();
       expect(screen.getAllByRole("img").map((i) => i.getAttribute("src"))).toEqual(["/api/brands/alpha/thumbs/i.png"]);
     });
 

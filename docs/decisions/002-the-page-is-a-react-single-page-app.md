@@ -170,3 +170,13 @@ A review of the commits since the layout (xhigh, 13 findings) found these; the o
 4. **While the add waits** (up to eight seconds, ADR 008, decision 5) and the lookup is on, the box says "Looking up the page…" in a status region, so a slow site does not look like a stuck page.
 5. **The card of an item with an address, no picture of its own and a kept lookup** shows the preview picture at the top, in its own proportions (its width and height from the API, lazy), with no link and no viewer (ADR 008, decision 8), then the owner's words if any, then the page's title as muted text above the address. The title is another person's text, so it is never in the weight or place of the owner's words. It is plain text, as every text on a card is. A lookup that got only a title, or only a preview, shows that one.
 6. **A known cost, taken knowingly:** a preview picture is not opened by the viewer and has no alternative text beyond the page's title, or "Preview" when there is none.
+
+## Amendment (2026-10-17): a looked-up icon is shown small, next to the title
+
+**Accepted by the owner on 2026-10-17, after asking for it in chat ("maybe change the layout for the card") and accepting the draft ("Accepted").**
+
+[ADR 008](008-the-server-looks-up-an-address-once-under-strict-limits.md), amendment of the same date, makes the looked-up picture a site's icon instead of its `og:image`. The amendment of 2026-10-17 above (point 5) put that picture at the top of the card at its own proportions; for an icon of 16 to 180 pixels that would be a blurred stamp as wide as the card. It changes in this one place:
+
+1. **The icon is drawn at 32 by 32 CSS pixels** (`object-contain`, lazy), at the start of the text area, with the title beside it, and not at the top of the card. Its alternative text is empty when the title is shown (the title says it) and "Site icon" when there is no title.
+2. **Without a title the icon sits above the address** in the same place. An item with a picture of its own still shows no icon (unchanged).
+3. **Nothing else changes:** no link, no viewer, plain text for the title, the title muted and apart from the owner's words. The API's `preview.width` and `height` are still sent and are no longer used for the layout.

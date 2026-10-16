@@ -217,7 +217,7 @@ for (const scheme of ["light", "dark"] as const) {
       expect(problems).toEqual([]);
     });
 
-    test("an address with no picture offers the lookup, remembers it unchecked, and shows a kept title and preview on its card", async ({ page, board }) => {
+    test("an address with no picture offers the lookup, remembers it unchecked, and shows a kept title and icon on its card", async ({ page, board }) => {
       const problems = watchProblems(page);
       const address = "https://example.com/looked-up";
       await pasteText(page, address);
@@ -238,17 +238,17 @@ for (const scheme of ["light", "dark"] as const) {
       await pasteText(page, "https://example.com/another");
       await expect(page.getByLabel("Look up the page's title and preview")).not.toBeChecked();
 
-      // What a lookup keeps is shown on the card: the picture (served by the app, so the policy lets it load), the owner's words, the title apart.
+      // What a lookup keeps is shown on the card: the small icon (served by the app, so the policy lets it load), the owner's words, the title apart.
       keepLookup(board, address, "The page's own title");
       await page.reload();
-      const preview = page.getByRole("img", { name: "The page's own title" });
+      const preview = page.locator('img[src*="/links/"]'); // its alternative text is empty: the title beside it says what it is
       await expect(preview).toBeVisible();
       await expect(preview).toHaveJSProperty("naturalWidth", 64);
       const card = page.getByRole("listitem").filter({ has: preview });
       await expect(card).toContainText("a reference");
       await expect(card.getByText("The page's own title", { exact: true }).and(page.locator("p"))).toBeVisible();
       await preview.click();
-      await expect(page.getByRole("dialog")).toHaveCount(0); // the viewer does not open a preview
+      await expect(page.getByRole("dialog")).toHaveCount(0); // the viewer does not open an icon
 
       // Deleting the item takes the kept lookup with it.
       await card.hover();

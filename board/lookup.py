@@ -1,14 +1,15 @@
-"""Address lookup: one bounded fetch of a page's title and preview picture (ADR 008, decisions 2 to 6 and 9).
+"""Address lookup: one bounded fetch of a page's title and icon (ADR 008, decisions 2 to 6 and 9, and the amendment of 2026-10-17).
 
-`lookup(address)` asks for the page once and, if the page names a preview image, for that image once. It never raises: any
-refusal, error or limit gives a `Found` with nothing in it, and only the kind of failure is logged, never the address.
+`lookup(address)` asks for the page once and then for its icon: the first of at most three candidates that gives an image
+(the page's apple-touch-icon, its icon links, then `/favicon.ico`). It never raises: any refusal, error or limit gives a `Found`
+with nothing in it, and only the kind of failure is logged, never the address. The icon is called the preview in the API.
 
 What may be reached (decision 3): `http` and `https` on ports 80 and 443, by a host name or a plain IP address (not a number such
 as `2130706433`, not with `user@`). The name is resolved here, every address it gives must be public, and the connection is
 made to the address that was checked, never to the name again, so a DNS answer that changes in between cannot redirect it.
 Each redirect (at most three, never https to http) is checked from the start. The bounds (decision 5): five seconds per
-connect and per read, eight for the whole lookup, 512 KB of a page read up to `</head>`, 5 MB of a preview that must be a
-PNG, JPEG, WebP or GIF. A page is read with `html.parser`, which runs nothing.
+connect and per read, eight for the whole lookup, 512 KB of a page read up to `</head>`, 1 MB of an icon that must be a
+PNG, JPEG, WebP, GIF or ICO. A page is read with `html.parser`, which runs nothing.
 
 `_resolve`, `_connect` and `_tls_context` are the only seams: the tests replace them, so nothing reaches the network, and the
 checks around them are the ones the server runs.
@@ -19,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import html.parser
+import io
 import http.client
 import ipaddress
 import logging
@@ -28,6 +30,8 @@ import ssl
 import threading
 import time
 import urllib.parse
+
+from PIL import Image
 
 from board import images
 
@@ -40,12 +44,14 @@ ATTEMPT_TIMEOUT = 2.0  # one connection attempt to one address (ADR 008, amendme
 READ_TIMEOUT = 5.0
 TOTAL_TIMEOUT = 8.0
 PAGE_BYTES = 512 * 1024
-PREVIEW_BYTES = 5 * 1024 * 1024
+PREVIEW_BYTES = 1024 * 1024  # an icon
+MAX_ICON_TRIES = 3
 TITLE_CHARS = 200
 USER_AGENT = "Board (local moodboard app)"
 _PAGE_TYPES = ("text/html", "application/xhtml+xml")
 _PAGE_ACCEPT = "text/html,application/xhtml+xml"
-_PREVIEW_ACCEPT = "image/png,image/jpeg,image/webp,image/gif"
+_PREVIEW_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon"
+_ICO = b"\x00\x00\x01\x00"
 _REDIRECTS = (301, 302, 303, 307, 308)
 _HOST = re.compile(r"[a-z0-9_-]+(\.[a-z0-9_-]+)*\.?")
 # Python calls this global, but an IPv4 address hides inside it (the old IPv4-compatible form). Carrier-grade, Teredo, 6to4 and the
@@ -281,7 +287,7 @@ def _fetch(address: str, budget: _Budget, accept: str, limit: int, *, types: tup
                     address = nxt
                     continue
                 if response.status != 200:
-                    raise _Failed("answer other than 200")
+                    raise _Failed(f"answer other than 200 ({response.status})")
                 content_type = (response.getheader("Content-Type") or "").strip()
                 if types is not None and content_type.split(";")[0].strip().lower() not in types:
                     raise _Failed("not a kind of page that is read")
@@ -305,13 +311,14 @@ def _fetch(address: str, budget: _Budget, accept: str, limit: int, *, types: tup
 
 
 class _Head(html.parser.HTMLParser):
-    """Collects the title, `og:title` and `og:image` of a page's head. Reads text; runs and fetches nothing."""
+    """Collects the title, `og:title` and icon links of a page's head. Reads text; runs and fetches nothing."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.og_title: str | None = None
-        self.og_image: str | None = None
         self.page_title: str | None = None
+        self.touch_icons: list[str] = []
+        self.icons: list[str] = []
         self._title_parts: list[str] | None = None
         self.done = False
 
@@ -324,10 +331,22 @@ class _Head(html.parser.HTMLParser):
             content = values.get("content")
             if content and name == "og:title" and self.og_title is None:
                 self.og_title = content
-            elif content and name == "og:image" and self.og_image is None:
-                self.og_image = content
+        elif tag == "link":
+            self._link(dict(attrs))
         elif tag == "title" and self.page_title is None:
             self._title_parts = []
+
+    def _link(self, values: dict[str, str | None]) -> None:
+        rel = (values.get("rel") or "").lower().split()
+        href = (values.get("href") or "").strip()
+        if not href or (values.get("type") or "").split(";")[0].strip().lower() == "image/svg+xml":
+            return
+        if urllib.parse.urlsplit(href).path.lower().endswith(".svg"):
+            return
+        if "apple-touch-icon" in rel or "apple-touch-icon-precomposed" in rel:
+            self.touch_icons.append(href)
+        elif "icon" in rel:  # also "shortcut icon" and "alternate icon", never "mask-icon" or "fluid-icon"
+            self.icons.append(href)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title" and self._title_parts is not None:
@@ -348,8 +367,8 @@ def _clean(text: str | None) -> str | None:
     return " ".join(kept.split())[:TITLE_CHARS].rstrip() or None
 
 
-def _read_head(body: bytes, content_type: str) -> tuple[str | None, str | None]:
-    """(title, preview address as written) from the start of a page."""
+def _read_head(body: bytes, content_type: str) -> tuple[str | None, list[str]]:
+    """(title, icon addresses as written, best first) from the start of a page."""
     charset = "utf-8"
     match = re.search(r"charset=([\w.-]+)", content_type, re.IGNORECASE)
     if match:
@@ -360,36 +379,56 @@ def _read_head(body: bytes, content_type: str) -> tuple[str | None, str | None]:
         text = body.decode("utf-8", errors="replace")
     parser = _Head()
     parser.feed(text)
-    return _clean(parser.og_title) or _clean(parser.page_title), (parser.og_image or "").strip() or None
+    return _clean(parser.og_title) or _clean(parser.page_title), parser.touch_icons + parser.icons
+
+
+def _icon(data: bytes) -> tuple[bytes, str]:
+    """(thumbnail bytes, extension) of an icon's bytes: an ICO becomes a PNG of its largest image, the rest as `images` makes them."""
+    if not data.startswith(_ICO):
+        ext = images.sniff(data)
+        return images.thumbnail(data, ext), ext
+    try:
+        image = Image.open(io.BytesIO(data))  # reads the header only
+        if image.width * image.height > images.MAX_PIXELS:
+            raise images.ImageRefused("the image has too many pixels")
+        out = io.BytesIO()
+        image.convert("RGBA").save(out, "PNG")
+    except images.ImageRefused:
+        raise
+    except Exception as err:  # noqa: BLE001  a decoder can fail in many ways; all mean unusable
+        raise images.ImageRefused("this file is not an image that can be read") from err
+    return images.thumbnail(out.getvalue(), "png"), "png"
 
 
 def _preview(address: str, budget: _Budget) -> tuple[bytes, str]:
-    """(thumbnail bytes, extension) of the image at an address, or _Failed."""
+    """(thumbnail bytes, extension) of the icon at an address, or _Failed."""
     _final, _type, data = _fetch(address, budget, _PREVIEW_ACCEPT, PREVIEW_BYTES, types=None, refuse_longer=True)
     try:
-        ext = images.sniff(data)
-        return images.thumbnail(data, ext), ext
+        return _icon(data)
     except images.ImageRefused as err:
         raise _Failed("not an image that is taken") from err
 
 
 def lookup(address: str) -> Found:
-    """The title and preview of the page at an address. Never raises; a failure of either part leaves that part None."""
+    """The title and icon of the page at an address. Never raises; a failure of either part leaves that part None."""
     with _Budget() as budget:
         try:
             final, content_type, body = _fetch(address, budget, _PAGE_ACCEPT, PAGE_BYTES, types=_PAGE_TYPES, until=b"</head>")
-            title, image = _read_head(body, content_type)
+            title, icons = _read_head(body, content_type)
+            candidates = [urllib.parse.urljoin(final, icon) for icon in icons]
+            candidates.append(urllib.parse.urljoin(final, "/favicon.ico"))
         except Exception as err:  # noqa: BLE001  decision 9: whatever went wrong, the item is added as it is
             _log_failure("page", err)
             return Found()
-        if image is None:
-            return Found(title)
-        try:
-            thumb, ext = _preview(urllib.parse.urljoin(final, image), budget)
-        except Exception as err:  # noqa: BLE001  the same, for the picture alone: the title is still kept
-            _log_failure("preview", err)
-            return Found(title)
-        return Found(title, thumb, ext)
+        for candidate in list(dict.fromkeys(candidates))[:MAX_ICON_TRIES]:
+            try:
+                thumb, ext = _preview(candidate, budget)
+            except Exception as err:  # noqa: BLE001  the same, for the picture alone: the title is still kept
+                if not str(err).endswith("(404)"):  # a site with no icon at a guessed place is ordinary and says nothing
+                    _log_failure("preview", err)
+                continue
+            return Found(title, thumb, ext)
+        return Found(title)
 
 
 def _log_failure(part: str, err: Exception) -> None:

@@ -5,6 +5,7 @@ connection goes to the local server whatever address it was asked for, with the 
 network, and the checks of decision 3 around those seams are the ones the server runs.
 """
 
+import io
 import ipaddress
 import logging
 import socket
@@ -119,6 +120,12 @@ class LookupCase(unittest.TestCase):
 
 
 class RefusedAddressesTest(LookupCase):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(lookup, "MAX_ICON_TRIES", 0)  # these tests are about the request for the page itself
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_each_kind_of_address_that_is_not_on_the_public_internet_is_refused_without_a_connection(self):
         for address in (
             "http://127.0.0.1/", "http://[::1]/", "http://localhost/", "http://loop6.test/", "http://10.0.0.1/", "http://172.16.0.1/",
@@ -224,6 +231,12 @@ class RefusedAddressesTest(LookupCase):
 
 
 class WhatIsAskedTest(LookupCase):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(lookup, "MAX_ICON_TRIES", 0)  # these tests are about the request for the page itself
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_the_request_names_the_host_and_sends_nothing_else_about_anyone(self):
         self.serve("/a/b", ok(page(title="T")))
         self.get("http://Good.Test/a/b?x=1&y=%20z#frag")
@@ -369,6 +382,12 @@ class WhatIsAskedTest(LookupCase):
 
 
 class RedirectsTest(LookupCase):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(lookup, "MAX_ICON_TRIES", 0)  # these tests are about the request for the page itself
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_redirect_is_followed_and_the_result_is_the_final_page(self):
         self.serve("/", redirect("/next"))
         self.serve("/next", ok(page(title="Final")))
@@ -442,10 +461,11 @@ class RedirectsTest(LookupCase):
         self.assertEqual(len(self.site.requests), 1)
 
     def test_a_redirect_to_a_private_address_for_the_preview_keeps_the_title_and_drops_the_picture(self):
-        self.serve("/", ok(page('<meta property="og:image" content="/img">', title="T")))
+        self.serve("/", ok(page('<link rel="icon" href="/img">', title="T")))
         self.serve("/img", redirect("http://evil.test/img"))
-        self.assertEqual(self.get(), lookup.Found("T"))
-        self.assertEqual(self.site.connects, [PUBLIC, PUBLIC])
+        with mock.patch.object(lookup, "MAX_ICON_TRIES", 3):
+            self.assertEqual(self.get(), lookup.Found("T"))
+        self.assertEqual(self.site.connects, [PUBLIC, PUBLIC, PUBLIC])  # the page, the redirected icon (not followed), then /favicon.ico
 
 
 class BoundsTest(LookupCase):
@@ -609,7 +629,7 @@ class BoundsTest(LookupCase):
 
     def test_the_whole_limit_is_shared_by_the_page_and_its_preview(self):
         self.patched(TOTAL_TIMEOUT=0.8)
-        self.serve("/", ok(page('<meta property="og:image" content="/img">', title="T")))
+        self.serve("/", ok(page('<link rel="icon" href="/img">', title="T")))
 
         def slow_image(handler):
             self.site.release.wait(5)
@@ -623,8 +643,9 @@ class BoundsTest(LookupCase):
         self.assertEqual((lookup.CONNECT_TIMEOUT, lookup.READ_TIMEOUT, lookup.TOTAL_TIMEOUT), (5.0, 5.0, 8.0))
         self.assertEqual(lookup.ATTEMPT_TIMEOUT, 2.0)
 
-    def test_the_default_redirect_and_preview_limits(self):
-        self.assertEqual((lookup.MAX_REDIRECTS, lookup.PREVIEW_BYTES, lookup.ALLOWED_PORTS), (3, 5 * 1024 * 1024, (80, 443)))
+    def test_the_default_redirect_and_icon_limits(self):
+        self.assertEqual((lookup.MAX_REDIRECTS, lookup.PREVIEW_BYTES, lookup.ALLOWED_PORTS), (3, 1024 * 1024, (80, 443)))
+        self.assertEqual(lookup.MAX_ICON_TRIES, 3)
 
     def test_a_failure_does_not_leave_the_timer_running(self):
         before = threading.active_count()
@@ -650,11 +671,18 @@ class ReadingThePageTest(LookupCase):
     def test_an_empty_og_title_falls_back_to_the_title_element(self):
         self.assertEqual(self.title_of('<meta property="og:title" content="  ">', title="Plain"), "Plain")
 
-    def test_the_first_of_two_preview_pictures_wins(self):
-        self.serve("/", ok(page('<meta property="og:image" content="/first"><meta property="og:image" content="/second">')))
+    def test_the_first_icon_that_gives_an_image_wins_and_no_more_is_asked_for(self):
+        self.serve("/", ok(page('<link rel="icon" href="/first"><link rel="icon" href="/second">')))
         self.serve("/first", ok(make_image("png")))
         self.serve("/second", ok(b"not an image"))
         self.assertIsNotNone(self.get().preview)
+        self.assertEqual([path for path, _ in self.site.requests], ["/", "/first"])
+
+    def test_og_image_is_not_read_or_asked_for(self):
+        self.serve("/", ok(page('<meta property="og:image" content="/banner">', title="T")))
+        self.serve("/banner", ok(make_image("png")))
+        self.assertEqual(self.get(), lookup.Found("T"))
+        self.assertNotIn("/banner", [path for path, _ in self.site.requests])
 
     def test_the_names_of_meta_tags_are_read_in_any_case(self):
         self.assertEqual(self.title_of('<meta property="OG:Title" content="Upper">'), "Upper")
@@ -716,7 +744,7 @@ class ReadingThePageTest(LookupCase):
 
 class PreviewTest(LookupCase):
     def with_image(self, data, content_type="image/png", head_content="/img"):
-        self.serve("/", ok(page(f'<meta property="og:image" content="{head_content}">', title="T")))
+        self.serve("/", ok(page(f'<link rel="icon" href="{head_content}">', title="T")))
         self.serve("/img", ok(data, content_type))
         return self.get()
 
@@ -735,24 +763,24 @@ class PreviewTest(LookupCase):
     def test_the_preview_address_is_resolved_against_the_page(self):
         for written in ("/img", "img", "http://good.test/img", "//good.test/img"):
             with self.subTest(written=written):
-                self.serve("/", ok(page(f'<meta property="og:image" content="{written}">')))
+                self.serve("/", ok(page(f'<link rel="icon" href="{written}">')))
                 self.serve("/img", ok(make_image("png")))
                 self.assertIsNotNone(self.get("http://good.test/").preview)
 
     def test_a_preview_on_another_host_goes_through_the_same_checks(self):
-        self.serve("/", ok(page('<meta property="og:image" content="http://other.test/img">')))
+        self.serve("/", ok(page('<link rel="icon" href="http://other.test/img">')))
         self.serve("/img", ok(make_image("png")))
         self.assertIsNotNone(self.get().preview)
         self.assertEqual(self.site.connects, [PUBLIC, OTHER_PUBLIC])
         self.site.connects.clear()
-        self.serve("/", ok(page('<meta property="og:image" content="http://evil.test/img">', title="T")))
+        self.serve("/", ok(page('<link rel="icon" href="http://evil.test/img">', title="T")))
         self.assertEqual(self.get(), lookup.Found("T"))
-        self.assertEqual(self.site.connects, [PUBLIC])
+        self.assertEqual(self.site.connects, [PUBLIC, PUBLIC])  # nothing to evil.test; then /favicon.ico on the page's own host
 
     def test_a_preview_address_that_is_not_http_gives_no_picture(self):
         for written in ("data:image/png;base64,iVBORw0KGgo=", "file:///etc/passwd", "ftp://good.test/img", "javascript:alert(1)", "http://127.0.0.1/img"):
             with self.subTest(written=written):
-                self.serve("/", ok(page(f'<meta property="og:image" content="{written}">', title="T")))
+                self.serve("/", ok(page(f'<link rel="icon" href="{written}">', title="T")))
                 self.assertEqual(self.get(), lookup.Found("T"))
 
     def test_a_preview_is_asked_for_as_an_image_with_the_same_manners(self):
@@ -775,7 +803,7 @@ class PreviewTest(LookupCase):
     def test_an_svg_by_content_type_is_ignored(self):
         self.assertEqual(self.with_image(b"<svg/>", "image/svg+xml"), lookup.Found("T"))
 
-    def test_a_preview_over_5_mb_is_ignored_and_one_at_the_limit_is_taken(self):
+    def test_a_preview_over_the_limit_is_ignored_and_one_at_the_limit_is_taken(self):
         data = make_image("png", (40, 30))
         with mock.patch.object(lookup, "PREVIEW_BYTES", len(data)):
             self.assertIsNotNone(self.with_image(data).preview)
@@ -790,7 +818,7 @@ class PreviewTest(LookupCase):
             handler.end_headers()
             handler.wfile.write(data + b"\0")
 
-        self.serve("/", ok(page('<meta property="og:image" content="/img">', title="T")))
+        self.serve("/", ok(page('<link rel="icon" href="/img">', title="T")))
         self.serve("/img", unannounced)
         with mock.patch.object(lookup, "PREVIEW_BYTES", len(data)):
             self.assertEqual(self.get(), lookup.Found("T"))
@@ -808,7 +836,7 @@ class PreviewTest(LookupCase):
             sent.append(1)
             self.site.release.wait(5)
 
-        self.serve("/", ok(page('<meta property="og:image" content="/img">', title="T")))
+        self.serve("/", ok(page('<link rel="icon" href="/img">', title="T")))
         self.serve("/img", liar)
         started = time.monotonic()
         self.assertEqual(self.get(), lookup.Found("T"))
@@ -819,19 +847,67 @@ class PreviewTest(LookupCase):
             self.assertEqual(self.with_image(make_image("png", (40, 30))), lookup.Found("T"))
 
     def test_a_missing_preview_keeps_the_title(self):
-        self.serve("/", ok(page('<meta property="og:image" content="/gone">', title="T")))
+        self.serve("/", ok(page('<link rel="icon" href="/gone">', title="T")))
         self.assertEqual(self.get(), lookup.Found("T"))
 
     def test_a_preview_through_a_redirect_is_taken(self):
-        self.serve("/", ok(page('<meta property="og:image" content="/img">')))
+        self.serve("/", ok(page('<link rel="icon" href="/img">')))
         self.serve("/img", redirect("/real"))
         self.serve("/real", ok(make_image("png")))
         self.assertIsNotNone(self.get().preview)
 
-    def test_no_og_image_asks_for_nothing_more(self):
+    def test_a_page_with_no_icon_link_is_asked_for_its_favicon_and_nothing_else(self):
         self.serve("/", ok(page(title="T")))
         self.assertEqual(self.get(), lookup.Found("T"))
-        self.assertEqual(len(self.site.requests), 1)
+        self.assertEqual([path for path, _ in self.site.requests], ["/", "/favicon.ico"])
+
+    def test_the_favicon_is_asked_for_on_the_final_address_of_the_page(self):
+        self.serve("/start", redirect("http://other.test/home"))
+        self.serve("/home", ok(page(title="T")))
+        self.serve("/favicon.ico", ok(make_image("png"), "image/x-icon"))
+        self.assertEqual(self.get("http://good.test/start").preview_ext, "png")
+        self.assertEqual(self.site.connects, [PUBLIC, OTHER_PUBLIC, OTHER_PUBLIC])
+
+    def test_candidates_are_apple_touch_icons_then_icon_links_then_the_favicon_without_repeats(self):
+        head = (
+            '<link rel="icon" href="/b.png"><link rel="shortcut icon" href="/c.png"><link rel="apple-touch-icon-precomposed" href="/a.png">'
+            '<link rel="apple-touch-icon" href="/a.png"><link rel="alternate icon" href="/d.png">'
+        )
+        self.serve("/", ok(page(head)))
+        with mock.patch.object(lookup, "MAX_ICON_TRIES", 10):
+            self.get()
+        self.assertEqual([path for path, _ in self.site.requests], ["/", "/a.png", "/b.png", "/c.png", "/d.png", "/favicon.ico"])
+
+    def test_icons_of_other_kinds_and_svg_icons_are_not_candidates(self):
+        head = (
+            '<link rel="mask-icon" href="/mask.png"><link rel="fluid-icon" href="/fluid.png"><link rel="stylesheet" href="/x.css">'
+            '<link rel="icon" type="image/svg+xml" href="/a.png"><link rel="icon" href="/b.SVG?v=1"><link rel="icon" href="">'
+            '<link rel="icon" href="/ok.png">'
+        )
+        self.serve("/", ok(page(head)))
+        self.get()
+        self.assertEqual([path for path, _ in self.site.requests], ["/", "/ok.png", "/favicon.ico"])
+
+    def test_at_most_three_candidates_are_asked_for(self):
+        self.serve("/", ok(page("".join(f'<link rel="icon" href="/{n}.png">' for n in range(6)))))
+        self.get()
+        self.assertEqual([path for path, _ in self.site.requests], ["/", "/0.png", "/1.png", "/2.png"])
+
+    def test_an_ico_is_taken_as_a_png_of_its_largest_image(self):
+        buffer = io.BytesIO()
+        Image.open(io.BytesIO(make_image("png", (48, 48)))).save(buffer, "ICO", sizes=[(16, 16), (48, 48)])
+        found = self.with_image(buffer.getvalue(), "image/x-icon")
+        self.assertEqual((found.title, found.preview_ext), ("T", "png"))
+        self.assertEqual(images.sniff(found.preview), "png")
+        self.assertEqual(Image.open(io.BytesIO(found.preview)).size, (48, 48))
+
+    def test_an_ico_that_cannot_be_read_or_has_too_many_pixels_is_ignored(self):
+        self.assertEqual(self.with_image(b"\x00\x00\x01\x00\x01\x00broken", "image/x-icon"), lookup.Found("T"))
+        buffer = io.BytesIO()
+        Image.new("RGBA", (32, 32)).save(buffer, "ICO", sizes=[(32, 32)])
+        with mock.patch.object(images, "MAX_PIXELS", 100), mock.patch.object(Image.Image, "convert") as convert:
+            self.assertEqual(self.with_image(buffer.getvalue(), "image/x-icon"), lookup.Found("T"))
+        convert.assert_not_called()  # refused before the pixels are decoded
 
 
 class FailureTest(LookupCase):
@@ -861,10 +937,20 @@ class FailureTest(LookupCase):
         self.assertIn("KeyError", "\n".join(logged.output))
 
     def test_a_failed_preview_is_logged_apart_from_the_page(self):
-        self.serve("/", ok(page('<meta property="og:image" content="/gone">', title="T")))
+        self.serve("/", ok(page('<link rel="icon" href="/bad">', title="T")))
+        self.serve("/bad", ok(b"not an image"))
         with self.assertLogs("board.lookup", "WARNING") as logged:
             self.get()
         self.assertIn("preview", logged.output[0])
+
+    def test_a_refusal_by_status_is_logged_with_the_status_and_a_missing_icon_is_not_logged(self):
+        self.serve("/", ok(page('<link rel="icon" href="/busy">', title="T")))
+        self.serve("/busy", {"status": 429, "headers": {}, "body": b""})
+        with self.assertLogs("board.lookup", "WARNING") as logged:
+            self.get()
+        self.assertEqual(len(logged.output), 1)  # /favicon.ico was missing (404) and said nothing
+        self.assertIn("answer other than 200 (429)", logged.output[0])
+        self.assertNotIn("busy", logged.output[0])
 
     def test_a_good_lookup_logs_nothing(self):
         self.serve("/", ok(page(title="T")))

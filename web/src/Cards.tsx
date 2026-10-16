@@ -15,12 +15,9 @@ const LINK = "focus-visible:outline-2 focus-visible:outline-ring";
 
 function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) => void }) {
   const words = item.description !== "" ? item.description : item.source === null && item.image === null ? item.text : "";
+  const icon = item.image === null ? item.preview : null;
   return (
     <>
-      {item.image === null && item.preview !== null && (
-        // The picture of a looked-up page (ADR 008): served by the app, not opened by the viewer, and no link.
-        <img src={item.preview.url} alt={item.title ?? "Preview"} width={item.preview.width} height={item.preview.height} loading="lazy" className="h-auto w-full" />
-      )}
       {item.thumb !== null && item.image !== null && (
         <button type="button" aria-label={`View ${itemWords(item)}`} onClick={(event) => onView(event.currentTarget)} className={`block w-full cursor-zoom-in ${LINK}`}>
           <img
@@ -36,8 +33,16 @@ function ItemCard({ item, onView }: { item: Item; onView: (opener: HTMLElement) 
       {(words !== "" || item.source !== null) && (
         <div className="flex flex-col gap-1 p-3 text-sm">
           {words !== "" && <p className="whitespace-pre-wrap">{words}</p>}
-          {/* Another person's text, so muted and apart from the owner's words (ADR 002, amendment of 2026-10-17). */}
-          {item.title !== null && <p className="text-xs text-muted-foreground">{item.title}</p>}
+          {/* Another person's text, so muted and apart from the owner's words (ADR 002, amendment of 2026-10-17). The page's icon
+              (ADR 008) is served by the app, small, not opened by the viewer, and no link. */}
+          {(item.title !== null || icon !== null) && (
+            <div className="flex items-center gap-2">
+              {icon !== null && (
+                <img src={icon.url} alt={item.title !== null ? "" : "Site icon"} width={32} height={32} loading="lazy" className="size-8 shrink-0 rounded-sm object-contain" />
+              )}
+              {item.title !== null && <p className="text-xs text-muted-foreground">{item.title}</p>}
+            </div>
+          )}
           {item.source !== null && (
             <a href={item.source} target="_blank" rel="noopener noreferrer" className={`break-all font-mono text-xs text-muted-foreground underline ${LINK}`}>
               {item.source}
