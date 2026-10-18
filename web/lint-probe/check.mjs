@@ -4,9 +4,9 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const dir = fileURLToPath(new URL(".", import.meta.url));
-const run = spawnSync("oxlint", ["--deny-warnings", dir], { encoding: "utf8" });
+const run = spawnSync("oxlint", ["--type-aware", "--deny-warnings", dir], { encoding: "utf8" });
 const output = `${run.stdout}${run.stderr}`;
-const expected = ["react(no-danger)", "react-hooks(rules-of-hooks)", "react-hooks(exhaustive-deps)", "jsx-a11y(alt-text)"];
+const expected = ["react(no-danger)", "react-hooks(rules-of-hooks)", "react-hooks(exhaustive-deps)", "jsx-a11y(alt-text)", "typescript(no-floating-promises)"];
 const missing = expected.filter((rule) => !output.includes(rule));
 
 if (run.error) {

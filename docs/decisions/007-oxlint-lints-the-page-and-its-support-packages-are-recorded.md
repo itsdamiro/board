@@ -49,3 +49,33 @@ Open: a formatter (none is chosen); whether to add `oxlint-tsgolint` for type-aw
 - **Biome.** One tool for lint and format. Not evaluated here beyond its name; would be right if the owner also wants a formatter from the same tool, after the same check that the rules in decision 1 exist and fail on the probe.
 - **Wait for typescript-eslint to support TypeScript 7.** Keeps the standard stack and TypeScript 7, but leaves the lint gate and the `dangerouslySetInnerHTML` rule undone for an unknown time, against ADR 002. Would be right if the page's first screens could wait.
 - **Accept the support packages implicitly, without a record.** Faster. Rejected because ADR 002, decision 10, asks for a record per dependency, and the list of what the page needs should be in one place. Never right while that rule stands.
+
+## Amendment (2026-10-18): a formatter, and type-aware lint rules
+
+**Drafted on the owner's go-ahead of 2026-10-18 ("ok lets do that", taking the formatter and type-aware lint the handoff recommended first). The choice of Oxfmt, the line width of 160 and the rule set are mine, not the owner's, and wait for the owner to read them.**
+
+Context: the "Open" paragraph of this record left two things undecided, a formatter and `oxlint-tsgolint` for type-aware rules. Checked on 2026-10-18 with `npm view` and a run over the page's code:
+
+- `oxfmt` 0.73.0 (MIT, same project as Oxlint; peers are optional: `svelte`, `vite-plus`, `@astrojs/compiler-rs`; about 9 MB unpacked, a native binary per platform) and `oxlint-tsgolint` 7.0.2004 (MIT, 16 KB, a launcher for the type-aware engine; Oxlint 1.88.0 names it as an optional peer, `>=7.0.2003`). Both install beside TypeScript 7.0.2 and Oxlint 1.88.0 without a conflict; the install reported 0 vulnerabilities.
+- The page's code had been formatted by hand, with lines up to 400 characters (mostly Tailwind class strings, which no formatter breaks). With the formatter's default width of 100, nearly every file would change; at 160, 12 of the 33 source files changed, about 370 lines, mostly objects and call chains that were over one line long.
+- `oxlint --type-aware` over the page found 9 errors in the `correctness` category and none in the page's own components: five `no-base-to-string` (a `String(input)` of a `RequestInfo | URL` in the fake server and the tests), three `unbound-method` (`expect(URL.revokeObjectURL)`) and one `no-implied-eval` (the test that runs `public/theme-init.js` with `new Function`). With `no-floating-promises` and `await-thenable` added there were none more; `no-misused-promises` reported two, the async handlers given to `onSubmit` and `onClick` in `Composer.tsx` and `DeleteItem.tsx`, which is how a React handler is written here.
+
+Decisions 1 to 3 and the "Open" paragraph change in these places, and nothing else:
+
+1. **Oxfmt is the formatter,** a dev dependency pinned to an exact version (0.73.0), configured in `web/.oxfmtrc.json` with `printWidth` 160 and its other defaults. `npm run format` rewrites `src`, `public`, `e2e` and the `vite.*` and Playwright config files; `npm run format:check` lists what it would change and fails if there is any.
+2. **The gate** `web-format` in `scripts/gates.conf` runs `npm run format:check`, so a file the formatter would change fails the gate like a lint error. It could fail: before the first format the check reported 27 files at the default width and 12 at 160.
+3. **Type-aware rules are on.** `oxlint-tsgolint` is a dev dependency pinned to 7.0.2004, and `npm run lint` runs Oxlint with `--type-aware`. The `correctness` category stays as errors, and `typescript/no-floating-promises` and `typescript/await-thenable` are added by name. `no-misused-promises` is not added: it flags every async React handler, which is the normal way to write one.
+4. **The probe covers a type-aware rule.** `web/lint-probe/floating.ts` is a floating promise, `lint-probe/check.mjs` runs Oxlint with `--type-aware` and now fails unless five rules report (`no-floating-promises` added to the four).
+5. **The nine findings are fixed** with the gate: a `requestPath` helper in `fakeServer.ts` replaces `String(input)`; the tests keep the mock for `URL.revokeObjectURL` in a variable; the one `new Function` in `theme-init.test.ts` carries a disable comment with its reason (the page's own script is run the way the browser runs it).
+6. **The first format is its own commit,** apart from the change that adds the tool, so a reader of the history can skip it.
+
+Consequences: a diff in the page is about what changed and not about where a line broke, and a promise that nothing waits for is caught before a test is. The costs are another native binary in the dev tree (a supply-chain surface of the kind this record already names), a type-aware run that is slower than the plain one (a few seconds on this page), and a formatter whose output is the only style: the owner's hand-set line breaks in long expressions are gone. Oxfmt is at 0.x, so its output may change between versions; the version is pinned and a bump is a format commit of its own.
+
+Tests: this is tooling, so the evidence is the gates: `npm run format:check` passes on the formatted tree and failed before it; `npm run lint:probe` fails if any of the five rules goes silent; `npm run lint`, `typecheck` and `test` pass after the format.
+
+Alternatives rejected:
+
+- **Prettier.** The standard, and it runs everywhere, but it is a second toolchain beside Oxlint, much slower and with its own plugins; Oxfmt aims at Prettier's output. It becomes right if Oxfmt's output proves unstable between versions.
+- **Biome for both lint and format.** One tool, but it replaces the gate and the probe that this record built, and its React rules were not checked here. It becomes right if Oxfmt or Oxlint stalls.
+- **The default width of 100.** Closer to common practice, but it rewrites nearly every file and breaks the long expectations in the tests across many lines. It becomes right if the owner finds 160 too wide to read side by side.
+- **Enabling `no-misused-promises`.** It would catch a handler that returns a promise where nothing handles its failure, but here it flags every async handler; those handlers catch their own errors. It becomes right with a configuration that exempts event handlers (`checksVoidReturn.attributes: false`), if Oxlint takes one.

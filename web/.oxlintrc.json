@@ -1,9 +1,17 @@
 {
-  "plugins": ["react", "typescript", "jsx-a11y"],
-  "categories": { "correctness": "error" },
+  "plugins": [
+    "react",
+    "typescript",
+    "jsx-a11y"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
   "rules": {
     "react/no-danger": "error",
     "react/rules-of-hooks": "error",
-    "react/exhaustive-deps": "error"
+    "react/exhaustive-deps": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/await-thenable": "error"
   }
 }

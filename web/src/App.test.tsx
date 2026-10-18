@@ -4,7 +4,7 @@ import App from "./App";
 import { COLUMNS_KEY } from "./columns";
 import { BRAND_KEY } from "./lastBrand";
 import { LOOKUP_KEY } from "./lookup";
-import { brandView, dropEvent, installServer, item, pasteEvent, png } from "./fakeServer";
+import { brandView, dropEvent, installServer, item, pasteEvent, png, requestPath } from "./fakeServer";
 import { STORAGE_KEY } from "./theme";
 
 // A ResizeObserver whose callbacks a test can fire after giving the stage a width (jsdom lays nothing out).
@@ -18,10 +18,14 @@ function resizeStage(width: number) {
   act(() => watchers.forEach((callback) => callback()));
 }
 
+// URL.revokeObjectURL as the current test's mock, so a test can ask it what it was given without reading a method off URL.
+let revoked = vi.fn();
+
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }));
   URL.createObjectURL = vi.fn(() => "blob:preview");
-  URL.revokeObjectURL = vi.fn();
+  revoked = vi.fn();
+  URL.revokeObjectURL = revoked;
   window.localStorage.clear();
   document.documentElement.className = "";
   // jsdom lacks what Radix's menu asks of the browser
@@ -168,7 +172,7 @@ describe("the brands", () => {
     const real = installServer([view]);
     const working = globalThis.fetch;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (failing && String(input) === "/api/brands/alpha") throw new TypeError("failed to fetch");
+      if (failing && requestPath(input) === "/api/brands/alpha") throw new TypeError("failed to fetch");
       return working(input, init);
     });
     render(<App />);
@@ -559,7 +563,7 @@ describe("the cards", () => {
         const dialog = await screen.findByRole("dialog", { name: "Delete 2 items?" });
         // the second is changed behind the page's back, so the server answers 409 for it, and what is left is read again
         vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-          const delete409 = init?.method === "DELETE" && String(input).endsWith("/b");
+          const delete409 = init?.method === "DELETE" && requestPath(input).endsWith("/b");
           if (delete409) return new Response(JSON.stringify({ error: "The item changed since it was shown." }), { status: 409, headers: { "Content-Type": "application/json" } });
           return new Response(JSON.stringify(init?.method === "DELETE" ? { deleted: "a" } : brandView("alpha", {}, [item({ key: "b", description: "second", date: "2026-10-02" }), item({ key: "c", description: "third", date: "2026-10-01" })])), { status: 200, headers: { "Content-Type": "application/json" } });
         }));
@@ -616,7 +620,7 @@ describe("the cards", () => {
       let deleted = false;
       intercept((input, init) => {
         if (init?.method === "DELETE") deleted = true;
-        return deleted && init?.method === undefined && String(input) === "/api/brands/alpha" ? new Promise<Response>(() => {}) : undefined; // the next read never comes
+        return deleted && init?.method === undefined && requestPath(input) === "/api/brands/alpha" ? new Promise<Response>(() => {}) : undefined; // the next read never comes
       });
       render(<App />);
       await shown("alpha");
@@ -989,7 +993,7 @@ describe("adding an item", () => {
     expect(server.calls.find((c) => c.method === "POST")?.body).toEqual({ description: "with a picture", source: null, image: "iVBORw==" });
     expect(screen.queryByRole("img", { name: "Preview of the file to add" })).toBeNull();
     expect(screen.getByText("paste / drop image here")).toBeTruthy();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
+    expect(revoked).toHaveBeenCalledWith("blob:preview");
     expect(server.calls.filter((c) => c.path === "/api/brands/alpha")).toHaveLength(2); // asked again after the add
   });
 
@@ -1146,7 +1150,7 @@ describe("adding an item", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove image" }));
     expect(screen.queryByRole("img", { name: "Preview of the file to add" })).toBeNull();
     expect(screen.getByText("paste / drop image here")).toBeTruthy();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
+    expect(revoked).toHaveBeenCalledWith("blob:preview");
   });
 
   it("keeps the next queued image when the one being sent is removed before the server answers", async () => {
@@ -1367,7 +1371,7 @@ describe("adding an item", () => {
     const gate = new Promise<void>((done) => (release = done));
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const answer = await real(input, init);
-      if (String(input) === "/api/brands/alpha") await gate; // alpha's answer is held until beta's has been shown
+      if (requestPath(input) === "/api/brands/alpha") await gate; // alpha's answer is held until beta's has been shown
       return answer;
     }));
     render(<App />);
@@ -1389,6 +1393,6 @@ describe("adding an item", () => {
     await choose("beta");
     await shown("beta");
     expect(screen.queryByRole("img", { name: "Preview of the file to add" })).toBeNull();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
+    expect(revoked).toHaveBeenCalledWith("blob:preview");
   });
 });

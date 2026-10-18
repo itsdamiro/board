@@ -16,6 +16,8 @@ function runInit(stored: string | null, systemDark: boolean, storageThrows = fal
     return key === STORAGE_KEY ? stored : null;
   };
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(getItem);
+  // the script is the page's own public/theme-init.js, run the way the browser runs it before the page loads
+  // oxlint-disable-next-line typescript/no-implied-eval
   new Function(script)();
   return document.documentElement.classList.contains("dark");
 }

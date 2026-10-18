@@ -41,11 +41,16 @@ export interface LookupBehaviour {
  * Installs the fake as `fetch` and returns the brands (change them between steps), every call made and how a lookup call goes.
  * `refuse` answers an add or a delete.
  */
+/** The path a fetch was asked for, as text (a string, a URL or a Request). */
+export function requestPath(input: RequestInfo | URL): string {
+  return typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+}
+
 export function installServer(brands: Brand[], refuse?: { status: number; error: string }) {
   const calls: Call[] = [];
   const lookup: LookupBehaviour = { gate: null, fail: false, found: { title: "A page" } };
   const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const path = String(input);
+    const path = requestPath(input);
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : null;
     calls.push({ method, path, body });

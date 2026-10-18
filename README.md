@@ -42,7 +42,7 @@ It answers only on `127.0.0.1`, and serves the built page from `web/dist/` at th
 nvm use                  # Node 24 from .nvmrc
 cd web && npm ci
 npm run dev              # http://127.0.0.1:5173, with /api sent on to the server below (BOARD_PORT, default 8765)
-npm run typecheck && npm run lint && npm test && npm run build
+npm run typecheck && npm run lint && npm test && npm run format:check && npm run build   # `npm run format` rewrites the files
 ```
 
 Start the server first (`python -m board --vault ...`). The dev server refuses a request that does not come from its own page before it forwards anything (ADR 004).
