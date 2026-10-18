@@ -10,17 +10,7 @@ import { itemWords, type Item } from "./api";
 const ARROW =
   "absolute top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-card text-card-foreground shadow-md hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-card";
 
-export default function Viewer({
-  images,
-  index,
-  onIndex,
-  onClose,
-}: {
-  images: Item[];
-  index: number;
-  onIndex: (index: number) => void;
-  onClose: () => void;
-}) {
+export default function Viewer({ images, index, onIndex, onClose }: { images: Item[]; index: number; onIndex: (index: number) => void; onClose: () => void }) {
   const item = images[index];
   if (item === undefined || item.image === null) return null;
   const label = itemWords(item);
@@ -40,7 +30,12 @@ export default function Viewer({
           <figcaption className="flex max-w-prose flex-col items-center gap-1 text-center text-sm">
             {item.description !== "" && <p className="whitespace-pre-wrap">{item.description}</p>}
             {item.source !== null && (
-              <a href={item.source} target="_blank" rel="noopener noreferrer" className="break-all font-mono text-xs text-muted-foreground underline focus-visible:outline-2 focus-visible:outline-ring">
+              <a
+                href={item.source}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="break-all font-mono text-xs text-muted-foreground underline focus-visible:outline-2 focus-visible:outline-ring"
+              >
                 {item.source}
               </a>
             )}

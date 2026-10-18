@@ -4,10 +4,7 @@ import type { Brand, Item, Panel } from "./api";
 // Moodboard's items and the other notes together, newest first. The server sends each item and note with its date; this
 // only merges the two lists, so an item keeps its place among the items and a note its place among the notes.
 
-export type Card =
-  | { kind: "hub"; key: string; brand: Brand }
-  | { kind: "item"; key: string; item: Item }
-  | { kind: "note"; key: string; panel: Panel };
+export type Card = { kind: "hub"; key: string; brand: Brand } | { kind: "item"; key: string; item: Item } | { kind: "note"; key: string; panel: Panel };
 
 function isNote(panel: Panel): boolean {
   return panel.title.toLowerCase() !== "moodboard"; // the grid shows what the Moodboard note holds

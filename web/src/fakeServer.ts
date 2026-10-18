@@ -23,7 +23,20 @@ export function brandView(slug: string, over: Partial<Brand> = {}, items: Item[]
 }
 
 export function item(over: Partial<Item> = {}): Item {
-  return { key: "k1", text: "words", description: "words", source: null, image: null, thumb: null, width: null, height: null, date: null, title: null, preview: null, ...over };
+  return {
+    key: "k1",
+    text: "words",
+    description: "words",
+    source: null,
+    image: null,
+    thumb: null,
+    width: null,
+    height: null,
+    date: null,
+    title: null,
+    preview: null,
+    ...over,
+  };
 }
 
 function json(status: number, body: unknown): Response {
@@ -80,7 +93,14 @@ export function installServer(brands: Brand[], refuse?: { status: number; error:
       if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
       const sent = body as { description: string; source: string | null; image: string | null };
       const kept = sent.source === null ? undefined : brand.moodboard.items.find((i) => i.source === sent.source && (i.title !== null || i.preview !== null)); // what is kept for an address shows on every item with it
-      const added = item({ key: `k${calls.length}`, description: sent.description, text: sent.description, source: sent.source, title: kept?.title ?? null, preview: kept?.preview ?? null });
+      const added = item({
+        key: `k${calls.length}`,
+        description: sent.description,
+        text: sent.description,
+        source: sent.source,
+        title: kept?.title ?? null,
+        preview: kept?.preview ?? null,
+      });
       brand.moodboard.items.unshift(added);
       return json(201, added);
     }

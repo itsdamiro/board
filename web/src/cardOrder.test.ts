@@ -8,16 +8,17 @@ const order = (cards: ReturnType<typeof orderCards>) => cards.map((c) => (c.kind
 
 describe("orderCards", () => {
   it("puts the hub card first, then items and notes, newest first", () => {
-    const brand = brandView(
-      "a",
-      { summary: "s", panels: [note("Mid", "2026-10-14"), note("Top", "2026-10-16")] },
-      [item({ key: "1", description: "i1", date: "2026-10-15T10:00" }), item({ key: "2", description: "i2", date: "2026-10-13T10:00" })],
-    );
+    const brand = brandView("a", { summary: "s", panels: [note("Mid", "2026-10-14"), note("Top", "2026-10-16")] }, [
+      item({ key: "1", description: "i1", date: "2026-10-15T10:00" }),
+      item({ key: "2", description: "i2", date: "2026-10-13T10:00" }),
+    ]);
     expect(order(orderCards(brand))).toEqual(["hub", "Top", "i1", "Mid", "i2"]);
   });
 
   it("gives a tie, or the same day, to the item, and puts a note with no date last", () => {
-    const brand = brandView("a", { panels: [note("Nodate", null), note("Day", "2026-10-15")] }, [item({ key: "1", description: "i1", date: "2026-10-15T10:00" })]);
+    const brand = brandView("a", { panels: [note("Nodate", null), note("Day", "2026-10-15")] }, [
+      item({ key: "1", description: "i1", date: "2026-10-15T10:00" }),
+    ]);
     expect(order(orderCards(brand))).toEqual(["i1", "Day", "Nodate"]);
   });
 
@@ -32,11 +33,11 @@ describe("orderCards", () => {
   });
 
   it("puts a dated note before an item with no date, and keeps the items in the order the server gave", () => {
-    const brand = brandView(
-      "a",
-      { panels: [note("N", "2020-01-01")] },
-      [item({ key: "1", description: "later id, listed first", date: "2026-10-15T10:00" }), item({ key: "2", description: "listed second", date: "2026-10-16T10:00" }), item({ key: "3", description: "none", date: null })],
-    );
+    const brand = brandView("a", { panels: [note("N", "2020-01-01")] }, [
+      item({ key: "1", description: "later id, listed first", date: "2026-10-15T10:00" }),
+      item({ key: "2", description: "listed second", date: "2026-10-16T10:00" }),
+      item({ key: "3", description: "none", date: null }),
+    ]);
     expect(order(orderCards(brand))).toEqual(["later id, listed first", "listed second", "N", "none"]);
   });
 

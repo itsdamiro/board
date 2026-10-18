@@ -69,7 +69,9 @@ function moodboard(board: Board, slug = BRAND): string {
 function boardFiles(board: Board, slug = BRAND): string[] {
   const root = join(board.vault, "Board", slug);
   if (!existsSync(root)) return [];
-  return readdirSync(root, { recursive: true, encoding: "utf8" }).filter((name) => /\.png$/.test(name)).sort();
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .filter((name) => /\.png$/.test(name))
+    .sort();
 }
 
 /** Keeps a lookup for an address as the server would after a fetch (no test reaches the internet, ADR 008, decision 12): a title and a 64 by 40 picture. */
@@ -370,7 +372,10 @@ for (const scheme of ["light", "dark"] as const) {
       await page.getByLabel("Description").fill("second");
       await page.getByLabel("Description").press("Enter");
       await expect(page.getByRole("img", { name: "second" })).toBeVisible();
-      const names = await page.getByRole("list", { name: "Cards" }).getByRole("img").evaluateAll((images) => images.map((i) => i.getAttribute("alt")));
+      const names = await page
+        .getByRole("list", { name: "Cards" })
+        .getByRole("img")
+        .evaluateAll((images) => images.map((i) => i.getAttribute("alt")));
       expect(names).toEqual(["second", "first"]);
       expect(boardFiles(board)).toHaveLength(4);
     });

@@ -21,7 +21,17 @@ const ACTION = "rounded-md border border-border px-3 py-1.5 text-sm focus-visibl
  * dialog stays up with the warning until it is closed. The dialog belongs to the cards' list, not to a card, so it stays up with
  * its message while the list is read again.
  */
-export function ConfirmDelete({ slug, items, onDone, onClose }: { slug: string; items: PlacedItem[]; onDone: (removed: string[]) => void; onClose: () => void }) {
+export function ConfirmDelete({
+  slug,
+  items,
+  onDone,
+  onClose,
+}: {
+  slug: string;
+  items: PlacedItem[];
+  onDone: (removed: string[]) => void;
+  onClose: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -76,9 +86,7 @@ export function ConfirmDelete({ slug, items, onDone, onClose }: { slug: string; 
               {problem}
             </p>
           )}
-          {warning !== null && (
-            <output className="text-sm">{warning}</output>
-          )}
+          {warning !== null && <output className="text-sm">{warning}</output>}
           <div className="flex justify-end gap-2">
             <button type="button" onClick={close} disabled={busy} className={ACTION}>
               {warning !== null && problem === null ? "Close" : "Cancel"}

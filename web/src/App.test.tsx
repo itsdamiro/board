@@ -10,7 +10,17 @@ import { STORAGE_KEY } from "./theme";
 // A ResizeObserver whose callbacks a test can fire after giving the stage a width (jsdom lays nothing out).
 const watchers: Array<() => void> = [];
 function watchingStage() {
-  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { watchers.push(callback); } observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: () => void) {
+        watchers.push(callback);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
 }
 function resizeStage(width: number) {
   const list = screen.getByRole("list", { name: "Cards" });
@@ -29,7 +39,14 @@ beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.className = "";
   // jsdom lacks what Radix's menu asks of the browser
-  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   watchers.length = 0;
   Element.prototype.hasPointerCapture = () => false;
   Element.prototype.releasePointerCapture = () => {};
@@ -212,7 +229,9 @@ describe("the brands", () => {
     ]);
     render(<App />);
     await shown("alpha");
-    const cards = within(screen.getByRole("list", { name: "Cards" })).getAllByRole("listitem").slice(1); // the first card is the paste box
+    const cards = within(screen.getByRole("list", { name: "Cards" }))
+      .getAllByRole("listitem")
+      .slice(1); // the first card is the paste box
     expect(within(cards[0]!).getByText("active")).toBeTruthy();
     expect(within(cards[0]!).getByText("A made-up client")).toBeTruthy();
     expect(within(cards[0]!).getByText("One line.")).toBeTruthy();
@@ -266,7 +285,15 @@ describe("the cards", () => {
   it("shows each item with its thumbnail, size, description, and address", async () => {
     installServer([
       brandView("alpha", {}, [
-        item({ key: "a", description: "a quiet layout", image: "/api/brands/alpha/images/i.png", thumb: "/api/brands/alpha/thumbs/i.png", width: 640, height: 320, source: "https://example.com/p" }),
+        item({
+          key: "a",
+          description: "a quiet layout",
+          image: "/api/brands/alpha/images/i.png",
+          thumb: "/api/brands/alpha/thumbs/i.png",
+          width: 640,
+          height: 320,
+          source: "https://example.com/p",
+        }),
         item({ key: "b", description: "", text: "a hand-written line" }),
       ]),
     ]);
@@ -336,7 +363,15 @@ describe("the cards", () => {
       installServer([
         brandView("alpha", {}, [
           item({ key: "b", description: "bare", source: "https://example.com/b" }),
-          item({ key: "w", description: "own", image: "/api/brands/alpha/images/i.png", thumb: "/api/brands/alpha/thumbs/i.png", width: 10, height: 10, preview: { url: "/api/brands/alpha/links/aaaaaaaaaaaaaaaa.png", width: 1, height: 1 } }),
+          item({
+            key: "w",
+            description: "own",
+            image: "/api/brands/alpha/images/i.png",
+            thumb: "/api/brands/alpha/thumbs/i.png",
+            width: 10,
+            height: 10,
+            preview: { url: "/api/brands/alpha/links/aaaaaaaaaaaaaaaa.png", width: 1, height: 1 },
+          }),
         ]),
       ]);
       render(<App />);
@@ -562,11 +597,28 @@ describe("the cards", () => {
         fireEvent.click(screen.getByRole("button", { name: "Delete 2" }));
         const dialog = await screen.findByRole("dialog", { name: "Delete 2 items?" });
         // the second is changed behind the page's back, so the server answers 409 for it, and what is left is read again
-        vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-          const delete409 = init?.method === "DELETE" && requestPath(input).endsWith("/b");
-          if (delete409) return new Response(JSON.stringify({ error: "The item changed since it was shown." }), { status: 409, headers: { "Content-Type": "application/json" } });
-          return new Response(JSON.stringify(init?.method === "DELETE" ? { deleted: "a" } : brandView("alpha", {}, [item({ key: "b", description: "second", date: "2026-10-02" }), item({ key: "c", description: "third", date: "2026-10-01" })])), { status: 200, headers: { "Content-Type": "application/json" } });
-        }));
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const delete409 = init?.method === "DELETE" && requestPath(input).endsWith("/b");
+            if (delete409)
+              return new Response(JSON.stringify({ error: "The item changed since it was shown." }), {
+                status: 409,
+                headers: { "Content-Type": "application/json" },
+              });
+            return new Response(
+              JSON.stringify(
+                init?.method === "DELETE"
+                  ? { deleted: "a" }
+                  : brandView("alpha", {}, [
+                      item({ key: "b", description: "second", date: "2026-10-02" }),
+                      item({ key: "c", description: "third", date: "2026-10-01" }),
+                    ]),
+              ),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }),
+        );
         fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
         expect((await within(dialog).findByRole("alert")).textContent).toContain("1 of 2 deleted. The item changed since it was shown.");
         await waitFor(() => expect(screen.queryByText("first", { selector: "li p" })).toBeNull()); // what went is gone from the page
@@ -588,10 +640,14 @@ describe("the cards", () => {
     /** Wraps the fake `fetch`: `change` may answer a call itself, or return nothing to let the fake answer. */
     function intercept(change: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> | undefined) {
       const inner = globalThis.fetch;
-      vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => change(input, init) ?? inner(input, init)));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => change(input, init) ?? inner(input, init)),
+      );
       return inner;
     }
-    const answer = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
+    const answer = (status: number, body: unknown) =>
+      Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
 
     it("reads the brand again when the server removed the block but could not remove its files, and keeps its warning up until closed", async () => {
       two();
@@ -644,7 +700,9 @@ describe("the cards", () => {
     });
 
     it("leaves Escape and the + and - keys to an open viewer, and to a field being typed in", async () => {
-      installServer([brandView("alpha", {}, [item({ key: "a", description: "first", image: "/img/a.png", thumb: "/t/a.png" }), item({ key: "b", description: "second" })])]);
+      installServer([
+        brandView("alpha", {}, [item({ key: "a", description: "first", image: "/img/a.png", thumb: "/t/a.png" }), item({ key: "b", description: "second" })]),
+      ]);
       render(<App />);
       await shown("alpha");
       const columns = () => screen.getByRole("status", { name: "Columns shown" }).textContent;
@@ -1137,7 +1195,9 @@ describe("adding an item", () => {
     expect(screen.queryByRole("button", { name: "Add the address of the original" })).toBeNull();
     expect(server.calls.filter((c) => c.method === "POST")).toHaveLength(0);
     fireEvent.submit(field.closest("form")!);
-    await waitFor(() => expect(server.calls.find((c) => c.method === "POST")?.body).toMatchObject({ description: "a reference", source: "https://example.com/original" }));
+    await waitFor(() =>
+      expect(server.calls.find((c) => c.method === "POST")?.body).toMatchObject({ description: "a reference", source: "https://example.com/original" }),
+    );
   });
 
   it("refuses a typed address that is not a web address, and Escape closes the field", async () => {
@@ -1238,7 +1298,16 @@ describe("adding an item", () => {
     await ready();
     const inner = globalThis.fetch;
     let answer: (() => void) | undefined;
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => (init?.method === "POST" ? new Promise<Response>((resolve) => { answer = () => resolve(inner(input, init)); }) : inner(input, init))));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+        init?.method === "POST"
+          ? new Promise<Response>((resolve) => {
+              answer = () => resolve(inner(input, init));
+            })
+          : inner(input, init),
+      ),
+    );
     document.dispatchEvent(dropEvent([png(), png()]));
     await screen.findByText("Image 1 of 2");
     const field = screen.getByLabelText("Description");
@@ -1421,7 +1490,13 @@ describe("adding an item", () => {
     });
 
     it("asks for nothing for an address the server already keeps an icon for, with no title", async () => {
-      const kept = { key: "old", description: "older", text: "older", source: "https://example.com/page", preview: { url: "/api/brands/alpha/links/0123456789abcdef.png", width: 32, height: 32 } };
+      const kept = {
+        key: "old",
+        description: "older",
+        text: "older",
+        source: "https://example.com/page",
+        preview: { url: "/api/brands/alpha/links/0123456789abcdef.png", width: 32, height: 32 },
+      };
       const server = installServer([brandView("alpha", {}, [item(kept)])]);
       render(<App />);
       await shown("alpha");
@@ -1446,15 +1521,21 @@ describe("adding an item", () => {
   });
 
   it("ignores a read of the brand that was left, even when it answers after the new brand's", async () => {
-    const server = installServer([brandView("alpha", {}, [item({ key: "a", description: "from alpha", text: "from alpha" })]), brandView("beta", {}, [item({ key: "b", description: "from beta", text: "from beta" })])]);
+    const server = installServer([
+      brandView("alpha", {}, [item({ key: "a", description: "from alpha", text: "from alpha" })]),
+      brandView("beta", {}, [item({ key: "b", description: "from beta", text: "from beta" })]),
+    ]);
     const real = fetch as unknown as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
     let release: () => void = () => {};
     const gate = new Promise<void>((done) => (release = done));
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const answer = await real(input, init);
-      if (requestPath(input) === "/api/brands/alpha") await gate; // alpha's answer is held until beta's has been shown
-      return answer;
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const answer = await real(input, init);
+        if (requestPath(input) === "/api/brands/alpha") await gate; // alpha's answer is held until beta's has been shown
+        return answer;
+      }),
+    );
     render(<App />);
     await screen.findByRole("button", { name: /^Brand/ });
     await choose("beta");

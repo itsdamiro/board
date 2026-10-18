@@ -14,7 +14,8 @@ interface Queued {
   url: string;
 }
 
-const ICON = "flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring";
+const ICON =
+  "flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring";
 
 function images(files: FileList | null | undefined): File[] {
   return Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
@@ -154,15 +155,17 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
   }
 
   return (
-    <form
-      onSubmit={submit}
-      aria-label="Add an item"
-      className="flex flex-col gap-3 p-4"
-    >
+    <form onSubmit={submit} aria-label="Add an item" className="flex flex-col gap-3 p-4">
       {!ready ? (
         <div className="flex flex-col items-center gap-2 py-8">
           <p className="text-center text-sm text-muted-foreground">paste / drop image here</p>
-          <button type="button" aria-label="Add text only" title="Add text only" onClick={() => setWriting(true)} className={`${ICON} border border-input pointer-coarse:size-11`}>
+          <button
+            type="button"
+            aria-label="Add text only"
+            title="Add text only"
+            onClick={() => setWriting(true)}
+            className={`${ICON} border border-input pointer-coarse:size-11`}
+          >
             <Type aria-hidden="true" className="size-4" />
           </button>
         </div>
@@ -171,11 +174,19 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
           {first !== undefined && (
             <div className="relative">
               <img src={first.url} alt="Preview of the file to add" className="max-h-64 w-full rounded-md border border-border object-contain" />
-              <button type="button" aria-label="Remove image" title="Remove image" onClick={() => drop(first)} className={`${ICON} absolute top-2 right-2 bg-card shadow-md`}>
+              <button
+                type="button"
+                aria-label="Remove image"
+                title="Remove image"
+                onClick={() => drop(first)}
+                className={`${ICON} absolute top-2 right-2 bg-card shadow-md`}
+              >
                 <X aria-hidden="true" className="size-4" />
               </button>
               {queue.length > 1 && (
-                <span className="absolute bottom-2 left-2 rounded-md bg-card px-2 py-0.5 text-xs text-muted-foreground shadow-md">Image 1 of {queue.length}</span>
+                <span className="absolute bottom-2 left-2 rounded-md bg-card px-2 py-0.5 text-xs text-muted-foreground shadow-md">
+                  Image 1 of {queue.length}
+                </span>
               )}
             </div>
           )}

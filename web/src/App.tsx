@@ -107,7 +107,11 @@ export default function App() {
     <div className="flex flex-col gap-6 p-6">
       <header className="flex items-center justify-between gap-4">
         <h1>
-          {brands !== null && brands.length > 0 ? <BrandSelect brands={brands} current={slug} onChoose={choose} /> : <span className="px-2 text-3xl">Board</span>}
+          {brands !== null && brands.length > 0 ? (
+            <BrandSelect brands={brands} current={slug} onChoose={choose} />
+          ) : (
+            <span className="px-2 text-3xl">Board</span>
+          )}
         </h1>
         <div className="flex items-center gap-2">
           {hasItems && <SelectButton selecting={selecting} onToggle={() => setSelectMode(!selecting)} />}
@@ -138,7 +142,16 @@ export default function App() {
                 {brand.moodboard.problem}
               </p>
             )}
-            <Cards columns={columns} slug={brand.slug} cards={cards} pending={pending} selecting={selecting} onSelecting={setSelectMode} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={added} /> : undefined} />
+            <Cards
+              columns={columns}
+              slug={brand.slug}
+              cards={cards}
+              pending={pending}
+              selecting={selecting}
+              onSelecting={setSelectMode}
+              onChanged={refresh}
+              adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={added} /> : undefined}
+            />
           </>
         )}
       </main>

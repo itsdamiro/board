@@ -8,7 +8,18 @@ describe("webAddress", () => {
   });
 
   it("refuses everything else", () => {
-    for (const text of ["", "   ", "example.com", "ftp://example.com", "javascript:alert(1)", "https://", "see https://example.com", "https://a.com https://b.com", "https://example.com/a b", "a thought"]) {
+    for (const text of [
+      "",
+      "   ",
+      "example.com",
+      "ftp://example.com",
+      "javascript:alert(1)",
+      "https://",
+      "see https://example.com",
+      "https://a.com https://b.com",
+      "https://example.com/a b",
+      "a thought",
+    ]) {
       expect(webAddress(text), text).toBeNull();
     }
   });

@@ -30,13 +30,29 @@ export default function ColumnButtons({ columns }: { columns: Columns }) {
   return (
     <fieldset className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-sm text-card-foreground shadow-md">
       <legend className="sr-only">Columns</legend>
-      <button type="button" aria-label="Fewer columns" aria-keyshortcuts="-" title="Fewer columns (-)" disabled={count <= range.min} onClick={() => choose(count - 1)} className={BUTTON}>
+      <button
+        type="button"
+        aria-label="Fewer columns"
+        aria-keyshortcuts="-"
+        title="Fewer columns (-)"
+        disabled={count <= range.min}
+        onClick={() => choose(count - 1)}
+        className={BUTTON}
+      >
         <Minus aria-hidden="true" className="size-4" />
       </button>
       <output aria-live="polite" aria-label="Columns shown" className="w-4 text-center tabular-nums">
         {count}
       </output>
-      <button type="button" aria-label="More columns" aria-keyshortcuts="+" title="More columns (+)" disabled={count >= range.max} onClick={() => choose(count + 1)} className={BUTTON}>
+      <button
+        type="button"
+        aria-label="More columns"
+        aria-keyshortcuts="+"
+        title="More columns (+)"
+        disabled={count >= range.max}
+        onClick={() => choose(count + 1)}
+        className={BUTTON}
+      >
         <Plus aria-hidden="true" className="size-4" />
       </button>
     </fieldset>

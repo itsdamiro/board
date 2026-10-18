@@ -19,7 +19,12 @@ function ItemCard({ item, pending, onView }: { item: Item; pending: boolean; onV
   return (
     <>
       {item.thumb !== null && item.image !== null && (
-        <button type="button" aria-label={`View ${itemWords(item)}`} onClick={(event) => onView(event.currentTarget)} className={`block w-full cursor-zoom-in ${LINK}`}>
+        <button
+          type="button"
+          aria-label={`View ${itemWords(item)}`}
+          onClick={(event) => onView(event.currentTarget)}
+          className={`block w-full cursor-zoom-in ${LINK}`}
+        >
           <img
             src={item.thumb}
             alt={itemWords(item)}
@@ -38,7 +43,14 @@ function ItemCard({ item, pending, onView }: { item: Item; pending: boolean; onV
           {(item.title !== null || icon !== null) && (
             <div className="flex items-center gap-2">
               {icon !== null && (
-                <img src={icon.url} alt={item.title !== null ? "" : "Site icon"} width={32} height={32} loading="lazy" className="size-8 shrink-0 rounded-sm object-contain" />
+                <img
+                  src={icon.url}
+                  alt={item.title !== null ? "" : "Site icon"}
+                  width={32}
+                  height={32}
+                  loading="lazy"
+                  className="size-8 shrink-0 rounded-sm object-contain"
+                />
               )}
               {item.title !== null && <p className="text-xs text-muted-foreground">{item.title}</p>}
             </div>
@@ -67,7 +79,11 @@ function NoteCard({ panel }: { panel: Panel }) {
 function HubCard({ brand }: { brand: Brand }) {
   return (
     <section aria-label="About this brand" className="flex flex-col gap-2 p-4 text-sm">
-      {brand.hub_problem !== null && <p role="alert" className="text-destructive">{brand.hub_problem}</p>}
+      {brand.hub_problem !== null && (
+        <p role="alert" className="text-destructive">
+          {brand.hub_problem}
+        </p>
+      )}
       {(brand.status !== null || brand.client !== null) && (
         <p className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           {brand.status !== null && <span className="rounded-md border border-border px-2 py-0.5">{brand.status}</span>}
@@ -109,7 +125,25 @@ function Body({ card, pending, onView }: { card: Card; pending: ReadonlySet<stri
  * the items whose address is being looked up (ADR 008, amendment of 2026-10-17), which say so. `selecting` is the select mode of the
  * amendment of 2026-10-18, which the header's button turns on and off and `onSelecting` is told about.
  */
-export default function Cards({ slug, cards, adder, columns, pending, selecting, onSelecting, onChanged }: { slug: string; cards: Card[]; adder?: ReactNode; columns: Columns; pending: ReadonlySet<string>; selecting: boolean; onSelecting: (on: boolean) => void; onChanged: () => void }) {
+export default function Cards({
+  slug,
+  cards,
+  adder,
+  columns,
+  pending,
+  selecting,
+  onSelecting,
+  onChanged,
+}: {
+  slug: string;
+  cards: Card[];
+  adder?: ReactNode;
+  columns: Columns;
+  pending: ReadonlySet<string>;
+  selecting: boolean;
+  onSelecting: (on: boolean) => void;
+  onChanged: () => void;
+}) {
   // The viewer steps through the images in the order of the cards, so previous and next are the neighbours the owner sees.
   const placed = itemCards(cards);
   const gallery = placed.filter((entry) => entry.item.image !== null);
@@ -175,7 +209,14 @@ export default function Cards({ slug, cards, adder, columns, pending, selecting,
               {...(card.kind === "item" ? pickable(card.key) : {})}
               className={`group relative mb-4 break-inside-avoid overflow-hidden rounded-lg border bg-card text-card-foreground ${isPicked ? "border-ring ring-2 ring-ring" : "border-border"} ${selecting ? "select-none" : ""}`}
             >
-              <Body card={card} pending={pending} onView={(from) => { opener.current = from; setViewing(card.key); }} />
+              <Body
+                card={card}
+                pending={pending}
+                onView={(from) => {
+                  opener.current = from;
+                  setViewing(card.key);
+                }}
+              />
               {card.kind === "item" && selecting && <PickBox item={card.item} picked={isPicked} />}
               {card.kind === "item" && !selecting && <DeleteButton item={card.item} onAsk={() => setDeleting([{ key: card.key, item: card.item }])} />}
             </li>
@@ -183,15 +224,32 @@ export default function Cards({ slug, cards, adder, columns, pending, selecting,
         })}
       </ul>
       {selecting && (
-        <output aria-label="Selection" className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-md sm:gap-3 sm:px-4">
+        <output
+          aria-label="Selection"
+          className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-md sm:gap-3 sm:px-4"
+        >
           <span>{selection.length} selected</span>
-          <button type="button" disabled={none} onClick={() => setDeleting(selection)} className="rounded-md border border-destructive px-3 py-1 text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:min-h-11">
+          <button
+            type="button"
+            disabled={none}
+            onClick={() => setDeleting(selection)}
+            className="rounded-md border border-destructive px-3 py-1 text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:min-h-11"
+          >
             Delete {selection.length}
           </button>
-          <button type="button" disabled={none} onClick={() => setPicked(new Set())} className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 pointer-coarse:min-h-11">
+          <button
+            type="button"
+            disabled={none}
+            onClick={() => setPicked(new Set())}
+            className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 pointer-coarse:min-h-11"
+          >
             Clear
           </button>
-          <button type="button" onClick={finish} className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11">
+          <button
+            type="button"
+            onClick={finish}
+            className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11"
+          >
             Done
           </button>
         </output>
