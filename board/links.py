@@ -84,7 +84,8 @@ def read(vault: str, slug: str, address: str) -> Link | None:
     size = _size(path, data["preview"]) if os.path.isfile(path) and not os.path.islink(path) else None
     if size is None:  # the picture is gone or unreadable: the title still shows
         return Link(data["title"], None, None, None) if data["title"] else None
-    return Link(data["title"], f"/api/brands/{quote(slug, safe='')}/links/{name}.{data['preview']}", size[0], size[1])
+    version = os.stat(path).st_mtime_ns  # a file kept again for the same address is a new address for the browser (ADR 008, amendment of 2026-10-18)
+    return Link(data["title"], f"/api/brands/{quote(slug, safe='')}/links/{name}-{version:x}.{data['preview']}", size[0], size[1])
 
 
 def _size(path: str, ext: str) -> tuple[int, int] | None:
@@ -107,12 +108,19 @@ def path_of(vault: str, slug: str, name: str, ext: str) -> str | None:
 
 
 def store(vault: str, slug: str, address: str, found: lookup.Found, now: datetime.datetime | None = None) -> bool:
-    """Keep a lookup that got something. False, and nothing written, if it got nothing; True once the files are written."""
+    """Keep a lookup that got something. False, and nothing written, if it got nothing or the address already has a valid record;
+    True once the files are written. A stray file under this address's name is not a record, so it is removed first (ADR 008,
+    amendment of 2026-10-18)."""
     if found.title is None and found.preview is None:
         return False
     folder = images.links_folder(vault, slug, create=True)
     assert folder
     name = name_of(address)
+    if _read_json(folder, name) is not None:
+        return False
+    for ext in ("json", *ICON_TYPES):
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(os.path.join(folder, f"{name}.{ext}"))
     record = {
         "title": found.title,
         "preview": found.preview_ext if found.preview else None,
@@ -121,7 +129,7 @@ def store(vault: str, slug: str, address: str, found: lookup.Found, now: datetim
     created: list[str] = []
     try:
         if found.preview:  # the picture first, so a record never names a picture that is not there
-            with open(os.path.join(folder, f"{name}.{record['preview']}"), "xb") as f:  # "x": never over a file that exists
+            with open(os.path.join(folder, f"{name}.{record['preview']}"), "xb") as f:  # "x": a file that appears meanwhile is not written over
                 created.append(f.name)
                 f.write(found.preview)
         with open(os.path.join(folder, f"{name}.json"), "x", encoding="utf-8") as f:

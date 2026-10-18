@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import unittest
+from unittest import mock
 
 from board import images, links, lookup, svg
 from board.vault import VaultError
@@ -18,6 +19,10 @@ def found(title="A title", ext="jpg", size=(30, 20)):
 
 
 class LinksCase(VaultCase):
+    def version(self, ext):
+        """The version in an icon's address: the file's modification time in nanoseconds, in hex (ADR 008, amendment of 2026-10-18)."""
+        return format(os.stat(os.path.join(self.folder(), f"{links.name_of(ADDRESS)}.{ext}")).st_mtime_ns, "x")
+
     def folder(self):
         return os.path.join(self.vault, "Board", "alpha", "links")
 
@@ -72,19 +77,51 @@ class StoreTest(LinksCase):
         with open(os.path.join(self.folder(), f"{links.name_of(ADDRESS)}.json"), encoding="utf-8") as f:
             self.assertIsNone(json.load(f)["preview"])
 
-    def test_a_file_that_is_already_there_is_never_written_over(self):
-        self.write(f"{links.name_of(ADDRESS)}.jpg", b"mine")
-        with self.assertRaises(FileExistsError):
-            links.store(self.vault, "alpha", ADDRESS, found())
-        with open(os.path.join(self.folder(), f"{links.name_of(ADDRESS)}.jpg"), "rb") as f:
-            self.assertEqual(f.read(), b"mine")  # and the file it did not make is not removed
-        self.assertEqual(len(self.board_files()), 1)
+    def test_a_stray_picture_does_not_block_the_keep_and_is_replaced(self):
+        name = links.name_of(ADDRESS)
+        self.write(f"{name}.jpg", b"stray")
+        self.assertTrue(links.store(self.vault, "alpha", ADDRESS, found()))
+        self.assertEqual(sorted(self.board_files()), [f"links/{name}.jpg", f"links/{name}.json"])
+        self.assertEqual(links.read(self.vault, "alpha", ADDRESS).title, "A title")
+
+    def test_a_stray_picture_of_another_kind_is_removed_too(self):
+        name = links.name_of(ADDRESS)
+        self.write(f"{name}.png", b"stray")
+        self.assertTrue(links.store(self.vault, "alpha", ADDRESS, found()))
+        self.assertEqual(sorted(self.board_files()), [f"links/{name}.jpg", f"links/{name}.json"])
+
+    def test_a_record_that_is_not_valid_does_not_block_the_keep_and_is_replaced(self):
+        name = links.name_of(ADDRESS)
+        for junk in (b"not json", b'{"title": 5}', b"[]", b'{"preview": "exe"}'):
+            with self.subTest(junk=junk):
+                self.write(f"{name}.json", junk)
+                self.assertFalse(links.has(self.vault, "alpha", ADDRESS))
+                self.assertTrue(links.store(self.vault, "alpha", ADDRESS, found("Mended", None)))
+                self.assertEqual(links.read(self.vault, "alpha", ADDRESS).title, "Mended")
+                links.remove(self.vault, "alpha", ADDRESS)
+
+    def test_a_valid_record_is_never_written_over(self):
+        name = links.name_of(ADDRESS)
+        self.write(f"{name}.json", b'{"title": "Mine", "preview": null}')
+        self.assertFalse(links.store(self.vault, "alpha", ADDRESS, found("Other")))
+        with open(os.path.join(self.folder(), f"{name}.json"), "rb") as f:
+            self.assertEqual(f.read(), b'{"title": "Mine", "preview": null}')
+        self.assertEqual(self.board_files(), [f"links/{name}.json"])
+
+    def test_the_files_of_another_address_are_not_touched(self):
+        other = links.name_of("https://other.example")
+        self.write(f"{other}.jpg", b"theirs")
+        self.write(f"{other}.json", b"junk")
+        self.assertTrue(links.store(self.vault, "alpha", ADDRESS, found()))
+        for ext, content in (("jpg", b"theirs"), ("json", b"junk")):
+            with open(os.path.join(self.folder(), f"{other}.{ext}"), "rb") as f:
+                self.assertEqual(f.read(), content)
 
     def test_when_the_record_cannot_be_written_the_picture_is_taken_back(self):
-        self.write(f"{links.name_of(ADDRESS)}.json", b"{}")
-        with self.assertRaises(FileExistsError):
-            links.store(self.vault, "alpha", ADDRESS, found())
-        self.assertEqual(self.board_files(), [f"links/{links.name_of(ADDRESS)}.json"])
+        with mock.patch("board.links.json.dump", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                links.store(self.vault, "alpha", ADDRESS, found())
+        self.assertEqual(self.board_files(), [])
 
     def test_a_links_folder_that_is_a_link_is_refused_and_nothing_follows_it(self):
         elsewhere = os.path.join(os.path.dirname(self.vault), "elsewhere")
@@ -106,10 +143,19 @@ class StoreTest(LinksCase):
 
 
 class ReadTest(LinksCase):
+    def test_a_file_kept_again_for_the_same_address_has_a_new_address(self):
+        links.store(self.vault, "alpha", ADDRESS, found())
+        first = links.read(self.vault, "alpha", ADDRESS).preview
+        links.remove(self.vault, "alpha", ADDRESS)
+        links.store(self.vault, "alpha", ADDRESS, found())
+        os.utime(os.path.join(self.folder(), f"{links.name_of(ADDRESS)}.jpg"), ns=(1, 1))  # mtime is only as fine as the file system's
+        self.assertNotEqual(links.read(self.vault, "alpha", ADDRESS).preview, first)
+        self.assertTrue(links.read(self.vault, "alpha", ADDRESS).preview.endswith("-1.jpg"))
+
     def test_what_was_kept_is_read_back_with_the_thumbnails_address_and_size(self):
         links.store(self.vault, "alpha", ADDRESS, found("T", "png", (30, 20)))
         link = links.read(self.vault, "alpha", ADDRESS)
-        self.assertEqual(link, links.Link("T", f"/api/brands/alpha/links/{links.name_of(ADDRESS)}.png", 30, 20))
+        self.assertEqual(link, links.Link("T", f"/api/brands/alpha/links/{links.name_of(ADDRESS)}-{self.version('png')}.png", 30, 20))
         self.assertTrue(links.has(self.vault, "alpha", ADDRESS))
 
     def test_the_slug_is_quoted_in_the_preview_address(self):
@@ -261,7 +307,7 @@ class SvgIconTest(LinksCase):
         with open(path, "rb") as f:
             self.assertEqual(f.read(), SVG)
         name = links.name_of(ADDRESS)
-        self.assertEqual(links.read(self.vault, "alpha", ADDRESS), links.Link("Kept", f"/api/brands/alpha/links/{name}.svg", 24, 20))
+        self.assertEqual(links.read(self.vault, "alpha", ADDRESS), links.Link("Kept", f"/api/brands/alpha/links/{name}-{self.version('svg')}.svg", 24, 20))
         self.assertEqual(links.path_of(self.vault, "alpha", name, "svg"), path)
 
     def test_an_svg_edited_by_hand_to_fail_the_check_is_as_good_as_missing(self):

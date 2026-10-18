@@ -644,10 +644,38 @@ class LookupRouteTest(ServerCase):
         self.assertEqual(status, 200)
         self.assertEqual(response.getheader("Content-Type"), "image/png")
         self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
-        self.assertEqual(response.getheader("Cache-Control"), server.IMAGE_CACHE)
+        self.assertEqual(response.getheader("Cache-Control"), "private, max-age=31536000, immutable")
         self.assertIn("default-src 'self'", response.getheader("Content-Security-Policy"))
         self.assertEqual(body, self.lookup.return_value.preview)
         self.assertEqual((item["preview"]["width"], item["preview"]["height"]), (900, 450))
+
+    def test_a_preview_at_its_versioned_address_is_cached_for_good_and_any_version_gets_the_same_file(self):
+        _, item = self.post()
+        url = item["preview"]["url"]
+        self.assertRegex(url, r"/links/[0-9a-f]{16}-[0-9a-f]+\.png$")
+        _, first, body = self.call("GET", url)
+        self.assertEqual(first.getheader("Cache-Control"), "private, max-age=31536000, immutable")
+        self.assertIsNone(first.getheader("ETag"))
+        stem = url.rsplit("-", 1)[0]
+        for other in ("-1", "-" + "f" * 20):
+            with self.subTest(version=other):
+                status, _, same = self.call("GET", stem + other + ".png")
+                self.assertEqual((status, same), (200, body))
+
+    def test_a_preview_asked_for_without_its_version_is_never_kept_by_the_browser(self):
+        _, item = self.post()
+        status, response, _ = self.call("GET", item["preview"]["url"].rsplit("-", 1)[0] + ".png")
+        self.assertEqual(status, 200)
+        self.assertEqual(response.getheader("Cache-Control"), "private, no-cache")
+
+    def test_a_preview_kept_again_for_the_same_address_is_at_another_address(self):
+        _, item = self.post()
+        first = item["preview"]["url"]
+        self.call("DELETE", f"/api/brands/alpha/items/{item['key']}")
+        self.lookup.return_value = lookup.Found("A page", make_image("jpg", (40, 30)), "jpg")
+        _, item = self.post()
+        self.assertNotEqual(item["preview"]["url"], first)
+        self.assertEqual(self.call("GET", first)[0], 404)  # the old picture is gone, and its address does not stand for the new one
 
     def test_an_svg_preview_is_served_as_an_image_that_a_page_opened_on_it_cannot_run(self):
         svg_icon = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 30"><path/></svg>'
@@ -672,7 +700,9 @@ class LookupRouteTest(ServerCase):
     def test_a_preview_that_is_not_kept_a_brand_that_is_not_there_and_a_bad_name_are_404(self):
         _, item = self.post()
         url = item["preview"]["url"]
-        for path in (url.replace(".png", ".jpg"), url.replace("alpha", "nobody"), url.replace(url[-20:-4], "0" * 16), url.replace(url[-20:-4], "0" * 15),
+        name = url.rsplit("/", 1)[1][:16]
+        for path in (url.replace(".png", ".jpg"), url.replace("alpha", "nobody"), url.replace(name, "0" * 16), url.replace(name, "0" * 15),
+                     url.replace(name + "-", name + "-zz"), url.replace(name + "-", name + "--"), url.replace(".png", "-.png"),
                      url.replace(".png", ".svg"), url.replace(".png", ".json"), url + "?x=1", url.replace("/links/", "/links/../"), url.replace("/links/", "/link/")):
             with self.subTest(path=path):
                 self.assertEqual(self.call("GET", path)[0], 404)
@@ -709,7 +739,7 @@ class LookupRouteTest(ServerCase):
 
     def test_a_preview_that_is_a_link_is_not_served(self):
         _, item = self.post()
-        picture = os.path.join(self.vault, "Board", "alpha", "links", os.path.basename(item["preview"]["url"]))
+        picture = os.path.join(self.vault, "Board", "alpha", "links", item["preview"]["url"].rsplit("/", 1)[1][:16] + ".png")
         outside = os.path.join(os.path.dirname(self.vault), "outside.png")
         os.rename(picture, outside)
         os.symlink(outside, picture)

@@ -17,6 +17,7 @@ checks around them are the ones the server runs.
 
 from __future__ import annotations
 
+import codecs
 import contextlib
 import dataclasses
 import html.parser
@@ -54,9 +55,9 @@ _PREVIEW_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/
 _ICO = b"\x00\x00\x01\x00"
 _REDIRECTS = (301, 302, 303, 307, 308)
 _HOST = re.compile(r"[a-z0-9_-]+(\.[a-z0-9_-]+)*\.?")
-# Python calls this global, but an IPv4 address hides inside it (the old IPv4-compatible form). Carrier-grade, Teredo, 6to4 and the
-# rest are already not global for it.
-_NOT_PUBLIC = (ipaddress.ip_network("::/96"),)
+# Python calls these global: an IPv4 address hides inside the first (the old IPv4-compatible form), the second is the deprecated
+# site-local range of a private network. Carrier-grade, Teredo, 6to4 and the rest are already not global for it.
+_NOT_PUBLIC = (ipaddress.ip_network("::/96"), ipaddress.ip_network("fec0::/10"))
 # NAT64 (ADR 008, amendment of 2026-10-17): the network's translator forwards to the IPv4 address in the last 32 bits, so that address
 # is the one judged.
 _NAT64 = ipaddress.ip_network("64:ff9b::/96")
@@ -365,16 +366,54 @@ def _clean(text: str | None) -> str | None:
     return " ".join(kept.split())[:TITLE_CHARS].rstrip() or None
 
 
+_HEADER_CHARSET = re.compile(r"charset\s*=\s*[\"']?([\w.:-]+)", re.IGNORECASE)
+META_BYTES = 1024  # how far into a page its own charset is looked for
+
+
+class _MetaCharset(html.parser.HTMLParser):
+    """The charset a page's first META_BYTES name for themselves: `<meta charset>`, else `<meta http-equiv="content-type">`. Reads attributes
+    only, so a `charset=` inside some other meta tag's text is not taken."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.charset: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "meta" or self.charset is not None:
+            return
+        values = dict(attrs)
+        if values.get("charset"):
+            self.charset = (values["charset"] or "").strip()
+        elif (values.get("http-equiv") or "").strip().lower() == "content-type" and (found := _HEADER_CHARSET.search(values.get("content") or "")):
+            self.charset = found.group(1)
+
+
+def _known(name: str | None) -> str | None:
+    """The name if Python has that encoding, else None."""
+    try:
+        return name if name and codecs.lookup(name) else None
+    except LookupError:
+        return None
+
+
+def _decode(body: bytes, content_type: str) -> str:
+    """The page as text (ADR 008, amendment of 2026-10-18): by the header's charset if it names one Python has; else by the page's own
+    meta tag within the first META_BYTES (a meta that says UTF-16 or UTF-32 is read as UTF-8, as browsers do, since the tag itself had to be
+    read as ASCII); else UTF-8."""
+    if charset := _known((m := _HEADER_CHARSET.search(content_type)) and m.group(1)):
+        return body.decode(charset, errors="replace")
+    sniffer = _MetaCharset()
+    sniffer.feed(body[:META_BYTES].decode("latin-1"))  # latin-1 never fails and leaves the ASCII of the tags as it is
+    if charset := _known(sniffer.charset):
+        if codecs.lookup(charset).name.startswith(("utf-16", "utf-32")):
+            charset = "utf-8"
+        return body.decode(charset, errors="replace")
+    return body.decode("utf-8", errors="replace")
+
+
 def _read_head(body: bytes, content_type: str) -> tuple[str | None, list[str]]:
     """(title, icon addresses as written, best first) from the start of a page."""
-    charset = "utf-8"
-    match = re.search(r"charset=([\w.-]+)", content_type, re.IGNORECASE)
-    if match:
-        charset = match.group(1)
-    try:
-        text = body.decode(charset, errors="replace")
-    except LookupError:
-        text = body.decode("utf-8", errors="replace")
+    text = _decode(body, content_type)
     parser = _Head()
     parser.feed(text)
     return _clean(parser.og_title) or _clean(parser.page_title), parser.touch_icons + parser.icons

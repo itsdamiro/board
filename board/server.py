@@ -8,7 +8,7 @@ Routes (all under /api; errors are `{"error": "<plain text>"}`):
   GET    /api/brands                          {"brands": [slug, ...]}
   GET    /api/brands/<slug>                   the brand: badges, summary, panels, and Moodboard items, newest first
   GET    /api/brands/<slug>/images/<id>.<ext> the original image;  .../thumbs/<id>.<ext> its thumbnail
-  GET    /api/brands/<slug>/links/<hash>.<ext> the thumbnail of an address's preview (ADR 008)
+  GET    /api/brands/<slug>/links/<hash>-<version>.<ext> the thumbnail of an address's preview (ADR 008)
   POST   /api/brands/<slug>/items             {"description", "source", "image"(base64)} -> the new item, 201
   POST   /api/brands/<slug>/items/<key>/lookup  looks the item's address up (up to 8 s) -> the item, 200
   DELETE /api/brands/<slug>/items/<key>       removes the item whose key the brand view gave
@@ -31,6 +31,7 @@ from board import images, items, links, moodboard, vault, vault_io
 from board.moodboard import MoodboardError
 
 IMAGE_CACHE = "private, max-age=31536000, immutable"  # an image is named by its id and never changes; a deleted id is never made again
+LINK_CACHE = "private, no-cache"  # a link icon asked for without its version (the address alone names it): never kept without asking (ADR 008, amendment of 2026-10-18)
 CSP = "default-src 'self'; img-src 'self' blob:; frame-ancestors 'none'"  # ADR 002, decision 6: its own origin and blob: images, nothing else; and no site may frame the page (amendment of 2026-10-18)
 SVG_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"  # ADR 008, amendment of 2026-10-17: an SVG opened as a page runs nothing
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist")  # ADR 002, decision 1
@@ -44,7 +45,7 @@ PAGE_TYPES = {  # the only files the page route serves, each with its own type (
 MAX_BODY = images.MAX_BYTES * 4 // 3 + 64 * 1024  # a 25 MB image in base64, and the text around it
 _BRAND, _KEY = r"(?P<slug>[^/]+)", r"(?P<key>[0-9a-f]{64})"
 _IMAGE = rf"(?P<kind>images|thumbs)/(?P<id>{moodboard.ID_PATTERN})\.(?P<ext>{'|'.join(images.CONTENT_TYPES)})"
-_LINK = rf"links/(?P<name>[0-9a-f]{{16}})\.(?P<ext>{'|'.join(links.ICON_TYPES)})"
+_LINK = rf"links/(?P<name>[0-9a-f]{{16}})(?:-(?P<ver>[0-9a-f]{{1,20}}))?\.(?P<ext>{'|'.join(links.ICON_TYPES)})"
 ROUTES = [
     ("GET", re.compile(r"/api/brands"), "brands"),
     ("GET", re.compile(rf"/api/brands/{_BRAND}"), "brand"),
@@ -181,13 +182,13 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             self._send(HTTPStatus.OK, f.read(), images.CONTENT_TYPES[ext], IMAGE_CACHE)
 
-    def _route_link(self, slug: str, name: str, ext: str) -> None:
+    def _route_link(self, slug: str, name: str, ext: str, ver: str | None = None) -> None:  # `ver` only keys the browser's cache; it is not read
         vault.moodboard_path(self.server.vault, slug)  # refuses a slug that is not a brand
         path = links.path_of(self.server.vault, slug, name, ext)
         if not path:
             raise Failure(HTTPStatus.NOT_FOUND, "no such image")
         with open(path, "rb") as f:
-            self._send(HTTPStatus.OK, f.read(), links.ICON_TYPES[ext], IMAGE_CACHE, SVG_CSP if ext == "svg" else CSP)
+            self._send(HTTPStatus.OK, f.read(), links.ICON_TYPES[ext], IMAGE_CACHE if ver else LINK_CACHE, SVG_CSP if ext == "svg" else CSP)
 
     def _route_page(self, name: str) -> None:
         path = page_file(self.server.web_dir, name or "index.html")

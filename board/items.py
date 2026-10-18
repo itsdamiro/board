@@ -136,8 +136,7 @@ def look_up_item(vault_path: str, slug: str, key: str) -> dict:
 def _keep(vault_path: str, slug: str, address: str, found: lookup.Found) -> None:
     """Keep what a lookup found, unless another lookup of the address got there first."""
     try:
-        if not links.has(vault_path, slug, address):
-            links.store(vault_path, slug, address, found)
+        links.store(vault_path, slug, address, found)  # which writes nothing if the address is already kept
     except (OSError, vault.VaultError) as err:  # decision 9: the item stays as it is; the kind of failure only, never a path
         log.warning("keeping an address lookup failed: %s", type(err).__name__)
 

@@ -203,7 +203,7 @@ class RefusedAddressesTest(LookupCase):
             with self.subTest(ip=ip):
                 self.assertTrue(lookup._is_public(ip))
         for ip in ("127.0.0.1", "0.0.0.0", "10.1.2.3", "172.31.0.1", "192.168.0.1", "169.254.0.1", "100.64.0.1", "100.127.255.255", "224.0.0.1",
-                   "239.255.255.250", "255.255.255.255", "::1", "::", "fe80::1", "fc00::1", "fd12::1", "ff02::1", "::ffff:8.8.8.8",
+                   "239.255.255.250", "255.255.255.255", "::1", "::", "fe80::1", "fc00::1", "fd12::1", "fec0::1", "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "ff02::1", "::ffff:8.8.8.8",
                    "2002:808:808::", "64:ff9b::7f00:1", "64:ff9b::a00:1", "64:ff9b::a9fe:a9fe", "64:ff9b::6440:1", "64:ff9b::e000:1", "64:ff9b::ffff:ffff",
                    "64:ff9b:1::808:808", "64:ff9b:1::1", "::808:808", "2001:0:0:0:0:0:0:1", "not an address", ""):
             with self.subTest(ip=ip):
@@ -731,6 +731,40 @@ class ReadingThePageTest(LookupCase):
     def test_a_page_in_another_charset_is_decoded_by_the_one_it_names(self):
         body = "<html><head><title>Café</title></head></html>".encode("latin-1")
         self.assertEqual(self.title_of(content_type="text/html; charset=iso-8859-1", body=body), "Café")
+
+    def test_a_meta_charset_is_used_when_the_header_names_none(self):
+        for tag in ('<meta charset=iso-8859-1>', '<meta charset="ISO-8859-1">', "<meta charset='iso-8859-1'>",
+                    '<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">'):
+            with self.subTest(tag=tag):
+                body = f"<html><head>{tag}<title>Café</title></head></html>".encode("latin-1")
+                self.assertEqual(self.title_of(content_type="text/html", body=body), "Café")
+
+    def test_the_header_charset_wins_over_the_meta_tag(self):
+        body = '<html><head><meta charset=utf-8><title>Café</title></head></html>'.encode("latin-1")
+        self.assertEqual(self.title_of(content_type="text/html; charset=iso-8859-1", body=body), "Café")
+
+    def test_a_meta_charset_after_the_first_kilobyte_is_not_looked_for(self):
+        padding = "<!-- " + "x" * lookup.META_BYTES + " -->"
+        body = f"<html><head>{padding}<meta charset=iso-8859-1><title>Café</title></head></html>".encode("latin-1")
+        self.assertEqual(self.title_of(content_type="text/html", body=body), "Caf\ufffd")
+
+    def test_a_meta_charset_of_utf16_or_utf32_is_read_as_utf8_as_browsers_do(self):
+        for name in ("utf-16", "UTF-16LE", "utf-32"):
+            with self.subTest(name=name):
+                body = f"<html><head><meta charset={name}><title>Café</title></head></html>".encode()
+                self.assertEqual(self.title_of(content_type="text/html", body=body), "Café")
+
+    def test_a_charset_written_inside_another_meta_tags_text_is_not_taken(self):
+        body = '<html><head><meta name="description" content="Fix charset=latin-1 problems"><title>Café</title></head></html>'.encode()
+        self.assertEqual(self.title_of(content_type="text/html", body=body), "Café")
+
+    def test_a_header_charset_python_does_not_know_leaves_the_meta_tag_to_decide(self):
+        body = "<html><head><meta charset=iso-8859-1><title>Café</title></head></html>".encode("latin-1")
+        self.assertEqual(self.title_of(content_type="text/html; charset=nonsense", body=body), "Café")
+
+    def test_a_meta_charset_that_is_unknown_falls_back_to_utf8(self):
+        body = "<html><head><meta charset=nonsense><title>Café</title></head></html>".encode()
+        self.assertEqual(self.title_of(content_type="text/html", body=body), "Café")
 
     def test_an_unknown_charset_falls_back_to_utf8(self):
         self.assertEqual(self.title_of(content_type="text/html; charset=nonsense", body=page(title="Café")), "Café")

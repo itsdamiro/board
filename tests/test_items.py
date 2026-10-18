@@ -332,7 +332,8 @@ class LookupTest(VaultCase):
         self.lookup.assert_called_once_with(self.ADDRESS)
         self.assertEqual(item["title"], "A page")
         name = links.name_of(self.ADDRESS)
-        self.assertEqual(item["preview"], {"url": f"/api/brands/alpha/links/{name}.jpg", "width": 30, "height": 20})
+        version = format(os.stat(os.path.join(self.vault, "Board", "alpha", "links", f"{name}.jpg")).st_mtime_ns, "x")
+        self.assertEqual(item["preview"], {"url": f"/api/brands/alpha/links/{name}-{version}.jpg", "width": 30, "height": 20})
         self.assertEqual(self.kept(), [f"links/{name}.jpg", f"links/{name}.json"])
 
     def test_the_note_holds_only_what_the_owner_typed(self):
