@@ -233,13 +233,13 @@ Alternatives rejected:
 
 ## Amendment (2026-10-18): an item of only typed words can be added from the page again
 
-**Asked for by the owner on 2026-10-18 ("lets also do Text-only item from the page"). The wording of the button below is mine, and waits for the owner to see it on the page.**
+**Asked for by the owner on 2026-10-18 ("lets also do Text-only item from the page"). The button below was an icon; the owner tried it the same day and rule 1 was replaced by the amendment that follows (a worded button), which the owner has seen and kept.**
 
 Context: the amendment of 2026-10-16 (decision 8) took a loss knowingly: the description field appears only once an image or an address is there, so a line of words alone could not be added from the page, though the API (`POST /items` with only a `description`) and the Moodboard format (ADR 001, decision 3) take one. The owner now wants it back.
 
 Decision 4 and decision 8 of that amendment change in this place, and nothing else:
 
-1. **The empty box gains one icon button,** under the words "paste / drop image here", named "Add text only" (an icon with that name and title, no visible text, so the box still reads "paste / drop image here"). It is a plain `lucide-react` icon button like the link button, 44 px on a coarse pointer.
+1. **(Replaced by the amendment that follows: a worded button.) The empty box gains one icon button,** under the words "paste / drop image here", named "Add text only" (an icon with that name and title, no visible text, so the box still reads "paste / drop image here"). It is a plain `lucide-react` icon button like the link button, 44 px on a coarse pointer.
 2. **Pressing it shows the description field,** focused, as if an image had been pasted, with an "Cancel" icon beside it that goes back to the empty box. The link button for an address is there too, as for an image. Enter adds the item; there is no other button.
 3. **An empty description with no image and no address is not sent.** The page says "Write something first." in the box's alert, as it says "Only image files can be added." today; the server's own refusal (422) stays as the second layer.
 4. **After the add the box is empty again,** the mode is left, and a card shows the words as plain text, as a hand-written line does today (the card code already shows `text` for an item with no image and no address). Nothing about the API, the Moodboard or the vault changes: the app still writes only the description the owner typed (ADR 001, decision 3).
@@ -256,7 +256,7 @@ Alternatives rejected:
 
 ## Amendment (2026-10-18): the text-only button is a worded button
 
-**Asked for by the owner on 2026-10-18, after trying the button on the page: "the placement is kind suss.. can we put it on a corner? and i dont think the icon is effective, can we use a proper button with text on it." A corner was tried first; the owner then said "i think we can put it in the middle since its worded".** The wording is mine, and waits for the owner to see it.
+**Asked for by the owner on 2026-10-18, after trying the button on the page: "the placement is kind suss.. can we put it on a corner? and i dont think the icon is effective, can we use a proper button with text on it." A corner was tried first; the owner then said "i think we can put it in the middle since its worded".** The wording is mine; the owner saw the result on the page on 2026-10-18 and kept it ("its good").
 
 Rule 1 of the amendment above ("The empty box gains one icon button") changes in this place, and nothing else of it:
 

@@ -107,6 +107,10 @@ for (const scheme of ["light", "dark"] as const) {
     test("a pasted screenshot with a description becomes an item and the last block of the Moodboard", async ({ page, board }) => {
       const problems = watchProblems(page);
       await expect(page.getByRole("form", { name: "Add an item" })).toHaveText("paste / drop image hereAdd text only");
+      const words = await page.getByText("paste / drop image here").boundingBox(); // the button is in the middle, under the words (ADR 002, amendment of 2026-10-18)
+      const button = await page.getByRole("button", { name: "Add text only" }).boundingBox();
+      expect(words && button && Math.abs(words.x + words.width / 2 - (button.x + button.width / 2)) < 2).toBe(true);
+      expect(words && button && button.y > words.y + words.height).toBe(true);
 
       await dispatchImage(page, "paste");
       await expect(page.getByRole("img", { name: "Preview of the file to add" })).toBeVisible();
