@@ -867,7 +867,7 @@ describe("the cards", () => {
     render(<App />);
     await shown("alpha");
     const cards = within(screen.getByRole("list", { name: "Cards" })).getAllByRole("listitem");
-    expect(cards.map((card) => card.textContent)).toEqual(["paste / drop image here"]);
+    expect(cards.map((card) => card.textContent)).toEqual(["paste / drop image hereAdd text only"]);
   });
 
   it("mixes the notes in among the items by date, newest first", async () => {
@@ -887,7 +887,7 @@ describe("the cards", () => {
     render(<App />);
     await shown("alpha");
     const cards = within(screen.getByRole("list", { name: "Cards" })).getAllByRole("listitem");
-    expect(cards.map((card) => card.textContent)).toEqual(["paste / drop image here", "newer item", "Middlem", "older item", "Oldo", "Undatedu"]);
+    expect(cards.map((card) => card.textContent)).toEqual(["paste / drop image hereAdd text only", "newer item", "Middlem", "older item", "Oldo", "Undatedu"]);
   });
 
   it("has plus and minus buttons for the number of columns, starting at what the window has room for", async () => {
@@ -1028,7 +1028,7 @@ describe("adding an item", () => {
   it("is a dashed box that says only where to paste, with no field until there is something to describe", async () => {
     await ready();
     const box = screen.getByRole("form", { name: "Add an item" });
-    expect(box.textContent).toBe("paste / drop image here");
+    expect(box.textContent).toBe("paste / drop image hereAdd text only");
     expect(box.closest("li")?.className).toContain("border-dashed");
     expect(box.closest("li")?.parentElement?.firstElementChild).toBe(box.closest("li")); // the first card
     expect(screen.queryByLabelText("Description")).toBeNull();
@@ -1056,13 +1056,14 @@ describe("adding an item", () => {
   });
 
   describe("text only (ADR 002, amendment of 2026-10-18)", () => {
-    it("has a button in the empty box, with no visible text of its own", async () => {
+    it("has a text button in the middle of the box, under the words", async () => {
       await ready();
       const box = screen.getByRole("form", { name: "Add an item" });
       const button = within(box).getByRole("button", { name: "Add text only" });
-      expect(button.textContent).toBe("");
-      expect(button.className).toContain("pointer-coarse:size-11");
-      expect(box.textContent).toBe("paste / drop image here");
+      expect(button.textContent).toBe("Add text only");
+      expect(button.className).not.toContain("absolute");
+      expect(button.className).toContain("pointer-coarse:min-h-11");
+      expect(box.textContent).toBe("paste / drop image hereAdd text only");
     });
 
     it("shows the focused field and a Cancel button when pressed", async () => {
@@ -1420,7 +1421,7 @@ describe("adding an item", () => {
       const release = slow(server);
       fireEvent.change(screen.getByLabelText("Description"), { target: { value: "a reference" } });
       fireEvent.submit(form());
-      await waitFor(() => expect(screen.getByRole("form", { name: "Add an item" }).textContent).toBe("paste / drop image here")); // the box took it and is empty again
+      await waitFor(() => expect(screen.getByRole("form", { name: "Add an item" }).textContent).toBe("paste / drop image hereAdd text only")); // the box took it and is empty again
       expect(await screen.findByText(WAITING)).toBeTruthy();
       expect(screen.getByText("a reference", { selector: "p" })).toBeTruthy(); // the card is already in the list
       expect(screen.queryByText("A page")).toBeNull();

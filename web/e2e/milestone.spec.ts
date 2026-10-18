@@ -106,7 +106,7 @@ for (const scheme of ["light", "dark"] as const) {
 
     test("a pasted screenshot with a description becomes an item and the last block of the Moodboard", async ({ page, board }) => {
       const problems = watchProblems(page);
-      await expect(page.getByRole("form", { name: "Add an item" })).toHaveText("paste / drop image here");
+      await expect(page.getByRole("form", { name: "Add an item" })).toHaveText("paste / drop image hereAdd text only");
 
       await dispatchImage(page, "paste");
       await expect(page.getByRole("img", { name: "Preview of the file to add" })).toBeVisible();
@@ -161,7 +161,7 @@ for (const scheme of ["light", "dark"] as const) {
 
       await expect(page.getByText("only a thought", { exact: true })).toBeVisible();
       await expect(page.getByLabel("Description")).toHaveCount(0); // back to the empty box
-      await expect(page.getByRole("form", { name: "Add an item" })).toHaveText("paste / drop image here");
+      await expect(page.getByRole("form", { name: "Add an item" })).toHaveText("paste / drop image hereAdd text only");
       expect(moodboard(board)).toMatch(/\nonly a thought\n$/);
       expect(boardFiles(board)).toEqual([]);
       expect(problems).toEqual([]);

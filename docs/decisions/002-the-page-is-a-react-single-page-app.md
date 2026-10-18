@@ -253,3 +253,17 @@ Alternatives rejected:
 - **Typing straight into the empty box.** One fewer click, but the box would be a text field with a paste target in it, and a paste of an address or image would have to be told apart from a paste of words. It becomes right if the button is found to be in the way.
 - **A keyboard shortcut only.** No new control, but a touch device could not start a text item, and nothing on the page says the shortcut exists. Never alone.
 - **Showing the field always.** The empty box would no longer be the quiet "paste / drop image here" that the owner asked for on 2026-10-16.
+
+## Amendment (2026-10-18): the text-only button is a worded button
+
+**Asked for by the owner on 2026-10-18, after trying the button on the page: "the placement is kind suss.. can we put it on a corner? and i dont think the icon is effective, can we use a proper button with text on it." A corner was tried first; the owner then said "i think we can put it in the middle since its worded".** The wording is mine, and waits for the owner to see it.
+
+Rule 1 of the amendment above ("The empty box gains one icon button") changes in this place, and nothing else of it:
+
+1. **The button has the visible words "Add text only"** and no icon. It is a small bordered button with the card's background, 44 px high where the main input is coarse.
+2. **It stays in the middle of the box, under the words "paste / drop image here"**, as before. The corner was tried and left: with words on it the button reads as a button where it is, and a corner hid it from the person looking at the middle.
+3. **Its name, and what it does, are unchanged:** pressing it shows the focused field, Cancel goes back, an empty Enter says "Write something first.".
+
+Consequences: the box now reads "paste / drop image here" plus "Add text only" to a reader of its text, which the tests check. The icon-only version asked a person to guess; this one costs a few more pixels of height.
+
+Alternatives rejected: an icon with text beside it (more width for no new information), and the top right corner (tried on 2026-10-18, see above).

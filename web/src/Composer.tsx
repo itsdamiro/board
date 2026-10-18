@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link2, Type, X } from "lucide-react";
+import { Link2, X } from "lucide-react";
 import { addItem, type Item } from "./api";
 import { webAddress } from "./address";
 import { readLookup, writeLookup } from "./lookup";
@@ -157,16 +157,14 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
   return (
     <form onSubmit={submit} aria-label="Add an item" className="flex flex-col gap-3 p-4">
       {!ready ? (
-        <div className="flex flex-col items-center gap-2 py-8">
+        <div className="flex flex-col items-center gap-3 py-8">
           <p className="text-center text-sm text-muted-foreground">paste / drop image here</p>
           <button
             type="button"
-            aria-label="Add text only"
-            title="Add text only"
             onClick={() => setWriting(true)}
-            className={`${ICON} border border-input pointer-coarse:size-11`}
+            className="rounded-md border border-input bg-card px-3 py-1.5 text-xs font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11"
           >
-            <Type aria-hidden="true" className="size-4" />
+            Add text only
           </button>
         </div>
       ) : (
