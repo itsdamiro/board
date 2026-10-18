@@ -19,3 +19,6 @@ web/node_modules/
 web/dist/
 web/test-results/
 web/playwright-report/
+
+# Python's bytecode caches
+__pycache__/
