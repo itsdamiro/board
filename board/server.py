@@ -31,8 +31,8 @@ from board import images, items, links, moodboard, vault, vault_io
 from board.moodboard import MoodboardError
 
 IMAGE_CACHE = "private, max-age=31536000, immutable"  # an image is named by its id and never changes; a deleted id is never made again
-CSP = "default-src 'self'; img-src 'self' blob:"  # ADR 002, decision 6: its own origin and blob: images, nothing else
-SVG_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'"  # ADR 008, amendment of 2026-10-17: an SVG opened as a page runs nothing
+CSP = "default-src 'self'; img-src 'self' blob:; frame-ancestors 'none'"  # ADR 002, decision 6: its own origin and blob: images, nothing else; and no site may frame the page (amendment of 2026-10-18)
+SVG_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"  # ADR 008, amendment of 2026-10-17: an SVG opened as a page runs nothing
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "dist")  # ADR 002, decision 1
 PAGE_TYPES = {  # the only files the page route serves, each with its own type (nosniff makes a wrong one a broken script)
     ".html": "text/html; charset=utf-8",
@@ -114,6 +114,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Security-Policy", csp)
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")  # the same rule as frame-ancestors, for a browser that only knows this header
         self.send_header("Cache-Control", cache)
         self.end_headers()
         if self.command != "HEAD":

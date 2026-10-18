@@ -72,7 +72,8 @@ export default function App() {
 
   const cards = brand === null ? [] : orderCards(brand);
   const hasItems = cards.some((card) => card.kind === "item");
-  const selecting = selectMode && hasItems; // the mode ends when the last item goes
+  const selecting = selectMode && hasItems;
+  if (!hasItems && selectMode) setSelectMode(false); // the mode ends when the last item goes, so an item added later does not bring it back (ADR 002, amendment of 2026-10-18); set while rendering, as React advises for state that follows other state
   const refresh = () => setReload((n) => n + 1);
 
   // The add is already done and shown; the lookup (up to eight seconds) goes on beside it, the box stays free, and a failure leaves the item as it is (ADR 008, amendment of 2026-10-17).

@@ -255,6 +255,8 @@ class ReadTest(ServerCase):
             with self.subTest(path=path):
                 self.assertEqual(response.getheader("Content-Security-Policy"), server.CSP)
                 self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+                self.assertEqual(response.getheader("X-Frame-Options"), "DENY")  # no site may frame the page (ADR 002, amendment of 2026-10-18)
+                self.assertIn("frame-ancestors 'none'", response.getheader("Content-Security-Policy"))
                 self.assertEqual(response.getheader("Cache-Control"), "no-store")
 
 
@@ -279,6 +281,8 @@ class PageTest(ServerCase):
             with self.subTest(path=path):
                 self.assertEqual(response.getheader("Content-Security-Policy"), server.CSP)
                 self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+                self.assertEqual(response.getheader("X-Frame-Options"), "DENY")  # no site may frame the page (ADR 002, amendment of 2026-10-18)
+                self.assertIn("frame-ancestors 'none'", response.getheader("Content-Security-Policy"))
                 self.assertEqual(response.getheader("Cache-Control"), "no-store")
                 self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
 
@@ -656,6 +660,7 @@ class LookupRouteTest(ServerCase):
         self.assertEqual(response.getheader("Content-Type"), "image/svg+xml")
         self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
         self.assertEqual(response.getheader("Content-Security-Policy"), server.SVG_CSP)
+        self.assertIn("frame-ancestors 'none'", server.SVG_CSP)
         self.assertEqual(server.SVG_CSP.split(";")[0], "sandbox")  # no allow-scripts, no allow-same-origin: an opaque origin that runs nothing
         self.assertNotIn("allow-", server.SVG_CSP)
 

@@ -21,7 +21,7 @@ _REFUSED_ELEMENTS = frozenset(
     {"script", "foreignObject", "image", "a", "animate", "animateMotion", "animateTransform", "set", "handler", "listener", "iframe", "object", "embed"}
 )
 _DECLARATION = rb"(\xef\xbb\xbf)?\s*(<\?xml\s[^>]*\?>\s*)?"
-_START = re.compile(_DECLARATION + rb"(<!--.*?-->\s*)*<svg[\s>/]", re.DOTALL)
+_START = re.compile(_DECLARATION + rb"(?:<!--(?:(?!-->).)*-->\s*)*<svg[\s>/]", re.DOTALL)  # a comment cannot run past its own `-->`, so a run of comments is read once and never re-split
 _URL = re.compile(r"url\(\s*['\"]?\s*(.?)", re.IGNORECASE)  # group 1: the first character of what the url names
 _CSS_REFUSED = re.compile(r"@import|\\|expression\(|javascript:", re.IGNORECASE)
 _LENGTH = re.compile(r"\s*(\d+(\.\d+)?)(px)?\s*$")

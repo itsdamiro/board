@@ -3,6 +3,7 @@
 The files are written out here; none is a real site's.
 """
 
+import time
 import unittest
 
 from board import images, svg
@@ -127,6 +128,22 @@ class RefusedTest(unittest.TestCase):
 
     def test_deep_nesting_is_not_a_way_around_the_count(self):
         self.refused(doc("<g>" * 100 + "</g>" * 100 + "<g/>" * svg.MAX_ELEMENTS), "too many")
+
+
+class StartTest(unittest.TestCase):
+    def test_a_long_run_of_comments_is_read_in_linear_time(self):
+        """The first pattern split a run of comments every possible way: each two more comments took four times as long."""
+        for tail, expected in ((b"x", False), (b"<svg", False), (b" <svg>", True)):
+            data = b"<!---->" * 560 + tail  # the most that fits in the 4096 bytes looks_like reads
+            started = time.monotonic()
+            found = svg.looks_like(data)
+            self.assertLess(time.monotonic() - started, 0.2)
+            self.assertEqual(found, expected)
+
+    def test_comments_before_the_svg_are_still_skipped(self):
+        self.assertTrue(svg.looks_like(b"<?xml version='1.0'?> <!-- a --> <!-- b -- c -->\n<svg>"))
+        self.assertFalse(svg.looks_like(b"<!-- never closed <svg>"))
+        self.assertFalse(svg.looks_like(b"<!-- a --> <!-- b -->"))
 
 
 if __name__ == "__main__":

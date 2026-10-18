@@ -750,6 +750,26 @@ describe("the cards", () => {
         expect(screen.queryByRole("button", { name: "Select cards" })).toBeNull();
       });
 
+      it("does not come back on when an item is added after the last one went", async () => {
+        installServer([brandView("alpha", {}, [item({ key: "a", description: "only" })])]);
+        render(<App />);
+        await shown("alpha");
+        fireEvent.click(screen.getByRole("button", { name: "Select cards" }));
+        fireEvent.click(screen.getByRole("checkbox", { name: "Pick only" }));
+        fireEvent.click(screen.getByRole("button", { name: "Delete 1" }));
+        fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
+        await waitFor(() => expect(screen.queryByText("only", { selector: "li p" })).toBeNull());
+        document.dispatchEvent(pasteEvent([], "https://example.com/page"));
+        await screen.findByText("https://example.com/page");
+        fireEvent.change(screen.getByLabelText("Description"), { target: { value: "again" } });
+        fireEvent.submit(screen.getByLabelText("Description").closest("form")!);
+        await screen.findByText("again", { selector: "li p" });
+        expect(bar()).toBeNull();
+        expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+        expect(screen.getByRole("button", { name: "Select cards" }).getAttribute("aria-pressed")).toBe("false");
+        expect(screen.getByRole("button", { name: "Delete again" })).not.toBeNull(); // the trash button is back, as outside the mode
+      });
+
       it("shows the trash button on a device that cannot hover, and bigger where the main input is coarse", async () => {
         three();
         render(<App />);
