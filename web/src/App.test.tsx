@@ -509,7 +509,9 @@ describe("the cards", () => {
         expect(screen.getByRole("status", { name: "Selection" }).textContent).toContain("2 selected");
         shiftClick(card("second")); // a second shift-click lets it go
         expect(screen.getByRole("status", { name: "Selection" }).textContent).toContain("1 selected");
-        fireEvent.click(screen.getByRole("button", { name: "View first" })); // a plain click is still the viewer
+        fireEvent.click(screen.getByRole("button", { name: "Done" })); // the first shift-click turned the select mode on; Done ends it
+        expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "View first" })); // and a plain click is the viewer again
         expect(await screen.findByRole("dialog")).toBeTruthy();
       });
 
@@ -527,16 +529,19 @@ describe("the cards", () => {
         await waitFor(() => expect(screen.queryByText("third")).toBeNull());
         expect(calls.filter((call) => call.method === "DELETE").map((call) => call.path)).toEqual(["/api/brands/alpha/items/a", "/api/brands/alpha/items/c"]);
         expect(screen.getByText("second")).toBeTruthy();
-        expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+        expect(screen.getByRole("status", { name: "Selection" }).textContent).toContain("0 selected"); // the mode goes on until Done
         expect(screen.queryByRole("dialog")).toBeNull();
       });
 
-      it("clears the picks with Clear or Escape and deletes nothing", async () => {
+      it("drops the picks with Clear and leaves the mode with Done or Escape, and deletes nothing", async () => {
         const { calls } = three();
         render(<App />);
         await shown("alpha");
         shiftClick(card("second"));
         fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+        expect(screen.getByRole("status", { name: "Selection" }).textContent).toContain("0 selected"); // Clear stays in the mode
+        expect(screen.getByRole("button", { name: "Delete 0" }).hasAttribute("disabled")).toBe(true);
+        fireEvent.click(screen.getByRole("button", { name: "Done" }));
         expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
         shiftClick(card("second"));
         fireEvent.keyDown(document, { key: "Escape" });
@@ -619,7 +624,7 @@ describe("the cards", () => {
       fireEvent.click(screen.getByRole("button", { name: "Delete 1" }));
       fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(screen.queryByRole("status", { name: "Selection" })).toBeNull();
+      expect(screen.getByRole("status", { name: "Selection" }).textContent).toContain("0 selected");
     });
 
     it("asks about two picked blocks with the same text without a console error", async () => {
@@ -640,9 +645,9 @@ describe("the cards", () => {
       await shown("alpha");
       const columns = () => screen.getByRole("status", { name: "Columns shown" }).textContent;
       const selected = () => screen.queryByRole("status", { name: "Selection" })?.textContent;
-      fireEvent.click(screen.getByText("second", { selector: "li p" }), { shiftKey: true });
       fireEvent.click(screen.getByRole("button", { name: "View first" }));
       const dialog = await screen.findByRole("dialog");
+      fireEvent.click(screen.getByText("second", { selector: "li p" }), { shiftKey: true }); // the viewer is not modal, so a card can be picked behind it
       fireEvent.keyDown(dialog, { key: "+" });
       expect(columns()).toBe("3"); // the viewer is open, so the key is not the columns'
       fireEvent.keyDown(dialog, { key: "Escape" });
@@ -655,6 +660,107 @@ describe("the cards", () => {
       expect(selected()).toContain("1 selected"); // Escape in a field closed the field and nothing else
       fireEvent.keyDown(document.body, { key: "Escape" });
       expect(selected()).toBeUndefined();
+    });
+
+    describe("with the select mode", () => {
+      const three = () =>
+        installServer([
+          brandView("alpha", {}, [
+            item({ key: "a", description: "first", image: "/img/a.png", thumb: "/t/a.png", date: "2026-10-03" }),
+            item({ key: "b", description: "second", date: "2026-10-02" }),
+            item({ key: "c", description: "third", date: "2026-10-01" }),
+          ]),
+        ]);
+      const bar = () => screen.queryByRole("status", { name: "Selection" });
+
+      it("has a Select button that turns the mode on and off, with a checkbox on each item card", async () => {
+        three();
+        render(<App />);
+        await shown("alpha");
+        const select = screen.getByRole("button", { name: "Select cards" });
+        expect(select.getAttribute("aria-pressed")).toBe("false");
+        expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+        expect(screen.getAllByRole("button", { name: /^Delete / })).toHaveLength(3);
+        fireEvent.click(select);
+        expect(select.getAttribute("aria-pressed")).toBe("true");
+        expect(screen.getAllByRole("checkbox")).toHaveLength(3); // the hub and note cards have none
+        expect(screen.queryAllByRole("button", { name: /^Delete (first|second|third)$/ })).toHaveLength(0); // the trash buttons are hidden
+        expect(bar()?.textContent).toContain("0 selected");
+        fireEvent.click(select);
+        expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+        expect(bar()).toBeNull();
+      });
+
+      it("picks a card by a click on it, or by its checkbox, without opening the viewer", async () => {
+        three();
+        render(<App />);
+        await shown("alpha");
+        fireEvent.click(screen.getByRole("button", { name: "Select cards" }));
+        fireEvent.click(screen.getByRole("button", { name: "View first" })); // no shift: the mode is enough
+        expect(screen.queryByRole("dialog")).toBeNull();
+        const second = screen.getByRole("checkbox", { name: "Pick second" });
+        expect(second.getAttribute("aria-checked")).toBe("false");
+        fireEvent.click(second);
+        expect(second.getAttribute("aria-checked")).toBe("true");
+        expect(screen.getByRole("checkbox", { name: "Pick first" }).getAttribute("aria-checked")).toBe("true");
+        expect(bar()?.textContent).toContain("2 selected");
+        fireEvent.click(second); // and again lets it go
+        expect(bar()?.textContent).toContain("1 selected");
+      });
+
+      it("reaches each checkbox with the keyboard, which a real button gives by being focusable", async () => {
+        three();
+        render(<App />);
+        await shown("alpha");
+        fireEvent.click(screen.getByRole("button", { name: "Select cards" }));
+        const box = screen.getByRole("checkbox", { name: "Pick third" });
+        box.focus();
+        expect(document.activeElement).toBe(box);
+        expect(box.tagName).toBe("BUTTON"); // a button's Space and Enter are a click, picked up by the card as above
+        expect(box.getAttribute("type")).toBe("button");
+      });
+
+      it("deletes the picked cards from the bar, and Done and Escape leave the mode", async () => {
+        const { calls } = three();
+        render(<App />);
+        await shown("alpha");
+        fireEvent.click(screen.getByRole("button", { name: "Select cards" }));
+        fireEvent.click(screen.getByRole("checkbox", { name: "Pick second" }));
+        fireEvent.click(screen.getByRole("button", { name: "Delete 1" }));
+        fireEvent.click(within(await screen.findByRole("dialog", { name: "Delete this item?" })).getByRole("button", { name: "Delete" }));
+        await waitFor(() => expect(screen.queryByText("second", { selector: "li p" })).toBeNull());
+        expect(calls.filter((call) => call.method === "DELETE").map((call) => call.path)).toEqual(["/api/brands/alpha/items/b"]);
+        expect(bar()?.textContent).toContain("0 selected");
+        fireEvent.keyDown(document, { key: "Escape" });
+        expect(bar()).toBeNull();
+        expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+      });
+
+      it("leaves the mode when another brand is chosen, and when the last item goes", async () => {
+        installServer([brandView("alpha", {}, [item({ key: "a", description: "only" })]), brandView("beta", {}, [item({ key: "z", description: "other" })])]);
+        render(<App />);
+        await shown("alpha");
+        fireEvent.click(screen.getByRole("button", { name: "Select cards" }));
+        expect(bar()).not.toBeNull();
+        fireEvent.click(screen.getByRole("checkbox", { name: "Pick only" }));
+        fireEvent.click(screen.getByRole("button", { name: "Delete 1" }));
+        fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
+        await waitFor(() => expect(screen.queryByText("only", { selector: "li p" })).toBeNull());
+        expect(bar()).toBeNull(); // nothing left to select
+        expect(screen.queryByRole("button", { name: "Select cards" })).toBeNull();
+      });
+
+      it("shows the trash button on a device that cannot hover, and bigger where the main input is coarse", async () => {
+        three();
+        render(<App />);
+        await shown("alpha");
+        const trash = screen.getByRole("button", { name: "Delete first" });
+        expect(trash.className).toContain("[@media(hover:none)]:opacity-100");
+        expect(trash.className).toContain("pointer-coarse:size-11");
+        expect(screen.getByRole("button", { name: "Select cards" }).className).toContain("pointer-coarse:size-11");
+        fireEvent.click(screen.getByRole("button", { name: "Select cards" }));
+        expect(screen.getByRole("checkbox", { name: "Pick first" }).className).toContain("pointer-coarse:size-11");
+      });
     });
   });
 

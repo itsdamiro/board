@@ -196,11 +196,56 @@ for (const scheme of ["light", "dark"] as const) {
       await expect(page.getByRole("img", { name: "one" })).toHaveCount(0);
       await expect(page.getByRole("img", { name: "three" })).toHaveCount(0);
       await expect(page.getByRole("img", { name: "two" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Selection" })).toContainText("0 selected"); // the first shift-click turned the select mode on
+      await page.getByRole("button", { name: "Done" }).click();
       await expect(page.getByRole("status", { name: "Selection" })).toHaveCount(0);
       expect(moodboard(board)).toContain("two");
       expect(moodboard(board)).not.toMatch(/\bone\b|\bthree\b/);
       expect(boardFiles(board)).toHaveLength(2);
       expect(problems).toEqual([]);
+    });
+
+    // ADR 002, amendment of 2026-10-18: on a screen that cannot hover, the trash button is always shown, and the select mode picks
+    // cards by a tap. `isMobile` with `hasTouch` makes Chromium report no hover and a coarse pointer.
+    test.describe("on a touch screen", () => {
+      test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+      test("the trash button is shown without hover, and the select mode picks by tap and deletes", async ({ page, board }) => {
+        const problems = watchProblems(page);
+        expect(await page.evaluate(() => [matchMedia("(hover: none)").matches, matchMedia("(pointer: coarse)").matches])).toEqual([true, true]);
+        for (const words of ["one", "two", "three"]) {
+          await dispatchImage(page, "paste");
+          await page.getByLabel("Description").fill(words);
+          await page.getByLabel("Description").press("Enter");
+          await expect(page.getByRole("img", { name: words })).toBeVisible();
+        }
+
+        const trash = page.getByRole("button", { name: "Delete one" });
+        await expect(trash).toHaveCSS("opacity", "1");
+        const size = await trash.boundingBox();
+        expect(size?.width).toBeGreaterThanOrEqual(44);
+        expect(size?.height).toBeGreaterThanOrEqual(44);
+
+        const select = page.getByRole("button", { name: "Select cards" });
+        await select.tap();
+        await expect(page.getByRole("button", { name: "Delete one" })).toHaveCount(0); // hidden in the mode, so a tap cannot press it by mistake
+        await page.getByRole("img", { name: "one" }).tap(); // a tap on the picture picks, and the viewer stays shut
+        await page.getByRole("checkbox", { name: "Pick three" }).tap();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await expect(page.getByRole("checkbox", { name: "Pick two" })).toHaveAttribute("aria-checked", "false");
+        await expect(page.getByRole("status", { name: "Selection" })).toContainText("2 selected");
+        await page.getByRole("button", { name: "Delete 2" }).tap();
+        await page.getByRole("dialog", { name: "Delete 2 items?" }).getByRole("button", { name: "Delete" }).tap();
+
+        await expect(page.getByRole("img", { name: "one" })).toHaveCount(0);
+        await expect(page.getByRole("img", { name: "three" })).toHaveCount(0);
+        await expect(page.getByRole("img", { name: "two" })).toBeVisible();
+        await page.getByRole("button", { name: "Done" }).tap();
+        await expect(page.getByRole("status", { name: "Selection" })).toHaveCount(0);
+        expect(moodboard(board)).not.toMatch(/\bone\b|\bthree\b/);
+        expect(boardFiles(board)).toHaveLength(2);
+        expect(problems).toEqual([]);
+      });
     });
 
     test("a pasted address and a dropped image make one item with a source line", async ({ page, board }) => {

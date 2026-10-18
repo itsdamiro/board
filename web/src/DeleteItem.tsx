@@ -5,12 +5,13 @@ import { deleteItem, itemWords, type Item } from "./api";
 import type { PlacedItem } from "./cardOrder";
 
 // The delete control of an item's card (ADR 002, amendments of 2026-10-16 on delete): an icon button that shows only while the
-// pointer is over the card, or while it has the keyboard's focus, and a confirmation before anything is removed. One
+// pointer is over the card, or while it has the keyboard's focus (always, where the main input cannot hover: amendment of
+// 2026-10-18), and a confirmation before anything is removed. One
 // confirmation serves a card's own button and the cards picked with shift-click. The server refuses a block that changed
 // since it was shown (409), and its words are shown as they come.
 
 const BUTTON =
-  "absolute top-2 right-2 flex size-8 items-center justify-center rounded-full border border-border bg-card text-card-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring hover:bg-accent hover:text-accent-foreground motion-reduce:transition-none";
+  "absolute top-2 right-2 flex size-8 items-center justify-center rounded-full border border-border bg-card text-card-foreground opacity-0 shadow-md transition-opacity pointer-coarse:size-11 [@media(hover:none)]:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring hover:bg-accent hover:text-accent-foreground motion-reduce:transition-none";
 const ACTION = "rounded-md border border-border px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60";
 
 /**

@@ -4,6 +4,7 @@ import BrandSelect from "./BrandSelect";
 import Cards from "./Cards";
 import ColumnButtons from "./ColumnButtons";
 import Composer from "./Composer";
+import SelectButton from "./SelectButton";
 import { readLastBrand, writeLastBrand } from "./lastBrand";
 import { orderCards } from "./cardOrder";
 import ThemeToggle from "./ThemeToggle";
@@ -20,6 +21,7 @@ export default function App() {
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set()); // keys of the items whose address is being looked up
+  const [selectMode, setSelectMode] = useState(false); // the select mode of ADR 002, amendment of 2026-10-18
   const columns = useColumns();
 
   useEffect(() => {
@@ -69,6 +71,8 @@ export default function App() {
   }, [slug, reload]);
 
   const cards = brand === null ? [] : orderCards(brand);
+  const hasItems = cards.some((card) => card.kind === "item");
+  const selecting = selectMode && hasItems; // the mode ends when the last item goes
   const refresh = () => setReload((n) => n + 1);
 
   // The add is already done and shown; the lookup (up to eight seconds) goes on beside it, the box stays free, and a failure leaves the item as it is (ADR 008, amendment of 2026-10-17).
@@ -93,6 +97,7 @@ export default function App() {
     if (next === slug) return;
     setBrand(null);
     setError(null);
+    setSelectMode(false);
     setSlug(next);
     writeLastBrand(next);
   }
@@ -104,6 +109,7 @@ export default function App() {
           {brands !== null && brands.length > 0 ? <BrandSelect brands={brands} current={slug} onChoose={choose} /> : <span className="px-2 text-3xl">Board</span>}
         </h1>
         <div className="flex items-center gap-2">
+          {hasItems && <SelectButton selecting={selecting} onToggle={() => setSelectMode(!selecting)} />}
           {columns.choosable && cards.length > 0 && <ColumnButtons columns={columns} />}
           <ThemeToggle />
         </div>
@@ -131,7 +137,7 @@ export default function App() {
                 {brand.moodboard.problem}
               </p>
             )}
-            <Cards columns={columns} slug={brand.slug} cards={cards} pending={pending} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={added} /> : undefined} />
+            <Cards columns={columns} slug={brand.slug} cards={cards} pending={pending} selecting={selecting} onSelecting={setSelectMode} onChanged={refresh} adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={added} /> : undefined} />
           </>
         )}
       </main>

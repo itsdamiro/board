@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { itemCards, type Card, type PlacedItem } from "./cardOrder";
 import type { Columns } from "./useColumns";
 import { ConfirmDelete, DeleteButton } from "./DeleteItem";
@@ -79,6 +79,24 @@ function HubCard({ brand }: { brand: Brand }) {
   );
 }
 
+// The checkbox of the select mode, in the card's top left corner (ADR 002, amendment of 2026-10-18). It is a real button, so Tab and
+// Space reach it; the click is handled by the card (`pickable`), which the capture phase makes first.
+function PickBox({ item, picked }: { item: Item; picked: boolean }) {
+  return (
+    <button
+      type="button"
+      // A native input would fight the card's capture-phase click (it would flip and be flipped back) and cannot hold the check icon.
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+      role="checkbox"
+      aria-checked={picked}
+      aria-label={`Pick ${itemWords(item)}`}
+      className={`absolute top-2 left-2 z-10 flex size-8 items-center justify-center rounded-full border shadow-md pointer-coarse:size-11 focus-visible:outline-2 focus-visible:outline-ring ${picked ? "border-primary bg-primary text-primary-foreground" : "border-foreground/60 bg-card/80 text-transparent hover:bg-accent"}`}
+    >
+      <Check aria-hidden="true" className="size-4" />
+    </button>
+  );
+}
+
 function Body({ card, pending, onView }: { card: Card; pending: ReadonlySet<string>; onView: (opener: HTMLElement) => void }) {
   if (card.kind === "hub") return <HubCard brand={card.brand} />;
   if (card.kind === "note") return <NoteCard panel={card.panel} />;
@@ -88,9 +106,10 @@ function Body({ card, pending, onView }: { card: Card; pending: ReadonlySet<stri
 /**
  * `adder` is the box that takes a pasted or dropped image; it is the first card, before the brand's own. `cards` are in the order
  * `orderCards` gives. `onChanged` is told after a delete was tried, so the page reads the brand again. `pending` holds the keys of
- * the items whose address is being looked up (ADR 008, amendment of 2026-10-17), which say so.
+ * the items whose address is being looked up (ADR 008, amendment of 2026-10-17), which say so. `selecting` is the select mode of the
+ * amendment of 2026-10-18, which the header's button turns on and off and `onSelecting` is told about.
  */
-export default function Cards({ slug, cards, adder, columns, pending, onChanged }: { slug: string; cards: Card[]; adder?: ReactNode; columns: Columns; pending: ReadonlySet<string>; onChanged: () => void }) {
+export default function Cards({ slug, cards, adder, columns, pending, selecting, onSelecting, onChanged }: { slug: string; cards: Card[]; adder?: ReactNode; columns: Columns; pending: ReadonlySet<string>; selecting: boolean; onSelecting: (on: boolean) => void; onChanged: () => void }) {
   // The viewer steps through the images in the order of the cards, so previous and next are the neighbours the owner sees.
   const placed = itemCards(cards);
   const gallery = placed.filter((entry) => entry.item.image !== null);
@@ -100,26 +119,32 @@ export default function Cards({ slug, cards, adder, columns, pending, onChanged 
   const [deleting, setDeleting] = useState<PlacedItem[] | null>(null); // the items the open question is about: one card's, or the picked ones
   const selection = placed.filter((entry) => picked.has(entry.key));
   const none = selection.length === 0;
+  const finish = useCallback(() => {
+    setPicked(new Set());
+    onSelecting(false);
+  }, [onSelecting]);
   useEffect(() => {
-    if (none) return;
-    const clear = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !keyIsTaken(event.target)) setPicked(new Set());
+    if (!selecting) return;
+    const leave = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !keyIsTaken(event.target)) finish();
     };
-    document.addEventListener("keydown", clear);
-    return () => document.removeEventListener("keydown", clear);
-  }, [none]);
+    document.addEventListener("keydown", leave);
+    return () => document.removeEventListener("keydown", leave);
+  }, [selecting, finish]);
   const opener = useRef<HTMLElement | null>(null);
   const { watchStage, count } = columns;
   const viewed = gallery.findIndex((entry) => entry.key === viewing);
 
-  // A click with Shift held on an item card picks it instead of doing what the click would. It is caught in the capture phase, so
-  // the picture's own click never runs; the dialogs are outside the list, so a click in them is left alone.
-  function shiftPick(key: string) {
+  // A click on an item card with Shift held, or in the select mode, picks it instead of doing what the click would; the first pick
+  // by shift-click also turns the mode on. It is caught in the capture phase, so the picture's own click never runs, and so the
+  // checkbox needs no handler of its own; the dialogs are outside the list, so a click in them is left alone.
+  function pickable(key: string) {
     return {
       onClickCapture(event: MouseEvent) {
-        if (!event.shiftKey) return;
+        if (!event.shiftKey && !selecting) return;
         event.preventDefault();
         event.stopPropagation();
+        onSelecting(true);
         setPicked((now) => {
           const next = new Set(now);
           if (!next.delete(key)) next.add(key);
@@ -147,28 +172,27 @@ export default function Cards({ slug, cards, adder, columns, pending, onChanged 
           return (
             <li
               key={card.key}
-              {...(card.kind === "item" ? shiftPick(card.key) : {})}
-              className={`group relative mb-4 break-inside-avoid overflow-hidden rounded-lg border bg-card text-card-foreground ${isPicked ? "border-ring ring-2 ring-ring" : "border-border"}`}
+              {...(card.kind === "item" ? pickable(card.key) : {})}
+              className={`group relative mb-4 break-inside-avoid overflow-hidden rounded-lg border bg-card text-card-foreground ${isPicked ? "border-ring ring-2 ring-ring" : "border-border"} ${selecting ? "select-none" : ""}`}
             >
               <Body card={card} pending={pending} onView={(from) => { opener.current = from; setViewing(card.key); }} />
-              {isPicked && (
-                <span aria-hidden="true" className="pointer-events-none absolute top-2 left-2 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
-                  <Check className="size-4" />
-                </span>
-              )}
-              {card.kind === "item" && <DeleteButton item={card.item} onAsk={() => setDeleting([{ key: card.key, item: card.item }])} />}
+              {card.kind === "item" && selecting && <PickBox item={card.item} picked={isPicked} />}
+              {card.kind === "item" && !selecting && <DeleteButton item={card.item} onAsk={() => setDeleting([{ key: card.key, item: card.item }])} />}
             </li>
           );
         })}
       </ul>
-      {!none && (
-        <output aria-label="Selection" className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-card px-4 py-2 text-sm text-card-foreground shadow-md">
+      {selecting && (
+        <output aria-label="Selection" className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-border bg-card px-3 py-2 text-sm text-card-foreground shadow-md sm:gap-3 sm:px-4">
           <span>{selection.length} selected</span>
-          <button type="button" onClick={() => setDeleting(selection)} className="rounded-md border border-destructive px-3 py-1 text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-ring">
+          <button type="button" disabled={none} onClick={() => setDeleting(selection)} className="rounded-md border border-destructive px-3 py-1 text-destructive hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:min-h-11">
             Delete {selection.length}
           </button>
-          <button type="button" onClick={() => setPicked(new Set())} className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+          <button type="button" disabled={none} onClick={() => setPicked(new Set())} className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 pointer-coarse:min-h-11">
             Clear
+          </button>
+          <button type="button" onClick={finish} className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11">
+            Done
           </button>
         </output>
       )}

@@ -191,3 +191,35 @@ A review of the commits since the layout (xhigh, 13 findings) found these; the o
 2. **The card says it is looking.** While a lookup call is out for an item, its card shows "Looking up the page…" (muted, small, in a status region) between the owner's words and the address, in place of the line the box showed. When the call answers, the page reads the brand again and the card shows the title and icon. If the call fails, the line goes and the card stays as it was added, with no message: the item is not wrong, only bare.
 3. **The page reads the brand again after both steps.** A read that a newer one overtakes (the add's, then the lookup's, or a change of brand) is let finish and its answer ignored, rather than cancelled, so the two reads never show as a failed request.
 4. **Known cost:** the page remembers what it is looking up only until it is closed. A lookup the server was still making is finished and kept anyway (ADR 008, amendment), and the page shows it the next time the brand is opened.
+
+## Amendment (2026-10-18): delete and picking work by touch and by keyboard
+
+**Accepted by the owner on 2026-10-18, as drafted ("accepted. will also go with your recommendations"): the Select button sits before the column pill, and the touch targets are 44 px on a device that cannot hover.** The owner chose this item from the handoff's "Known, not fixed" ("Delete cannot be used by touch or picked by keyboard") and asked for the design as an amendment before any code. It removes the known costs in point 4 of "a delete button on the cards" and point 4 of "shift-click picks several cards to delete"; the rest of both stands.
+
+What is wrong now (read in `web/src/Cards.tsx` and `DeleteItem.tsx` on 2026-10-18):
+
+- The trash button is `opacity-0` until the card is hovered or the button has focus. A touch screen has no hover, so the button stays invisible; it is still there and a tap on that corner would press it unseen.
+- Picking is a click with Shift held. Neither a finger nor the keyboard alone can do it. The keyboard can delete one item (Tab to the card's trash button), but not several.
+
+Decision, in the order it would be built:
+
+1. **The trash button is always shown where the main input cannot hover** (`@media (hover: none)`, a phone or a tablet used by touch). Where it can hover, nothing changes: it appears on hover or focus. A device with both a mouse and a touch screen is judged by its main input, as the browser reports it; the select mode below covers the other case.
+2. **A "Select" button in the header**, just before the column pill (a round icon button of `lucide-react`, dressed like the theme toggle, `aria-pressed`), shown when the brand has at least one item card, on every screen size. Pressing it turns the select mode on or off. Its tooltip is "Select cards to delete".
+3. **While the mode is on, each item card shows a checkbox in its top left corner**, a real button with `role="checkbox"` and `aria-checked`, named "Pick <the item's words>". It is reachable with Tab and toggled with Space or Enter, so the keyboard can pick any number of cards. The same check mark and ring show a picked card as now.
+4. **In the mode, a tap or click anywhere on an item card picks or lets it go**, as a shift-click does now, and does not open the viewer. This is the same capture-phase handler, taking "Shift held or select mode on". Shift-click keeps working with the mode off, and the first pick that way also turns the mode on, so its checkboxes show.
+5. **The trash buttons are hidden while the mode is on**, so a finger aimed at a card cannot press delete by mistake. Deleting is then the selection bar's "Delete N".
+6. **The selection bar shows while the mode is on**, even with nothing picked ("0 selected", Delete disabled), with "Delete N" and "Done" (which clears the picks and leaves the mode; "Clear" drops the picks and stays). Escape does what "Done" does, under the same rules as now (not while typing or with a dialog open). Choosing another brand leaves the mode, as it drops the picks. The confirmation, the one-after-the-other deletes and the failure messages are unchanged.
+7. **Touch targets are 44 by 44 CSS pixels** for the trash button, the checkbox and the Select button on a device that cannot hover (`@media (pointer: coarse)`), and 32 px as now elsewhere. No new dependency and no server change.
+8. **The accessible name of the card's list does not change**, and a screen reader hears "N selected" from the bar's `output` as now.
+
+Tests, when it is built: Vitest for the mode (the button turns it on and off, the checkbox picks by Space, a click picks and does not open the viewer, the trash buttons are hidden, Escape and Done leave it, a brand change leaves it); the e2e flow adds a run in a context with touch (`hasTouch` and `isMobile`, which reports no hover) that selects two cards with taps and deletes them, in both themes, with no console error. The page is looked at in the real browser at phone and tablet widths before it is called done.
+
+Known costs, taken knowingly: at eight columns on a tablet the cards are 70 to 110 px wide and a 44 px button covers a good part of one (the owner set that range and the buttons let them stop sooner); a hybrid laptop with a touch screen and a mouse shows no trash until it is hovered, and uses the Select button for touch; the mode is one more control in a header that is one row on a phone.
+
+Alternatives rejected:
+
+- **A checkbox on every card at all times** (as a mail list has). Reaches touch and keyboard with no mode, but it puts a control on every card of every brand for a thing done rarely, and doubles the corner clutter beside an always-visible trash on touch. Would be right if the owner picked often.
+- **Long-press to pick.** No visible control, so it cannot be found; it clashes with the browser's own long-press menu on a picture and on selected text, and a keyboard still has nothing. Would be right if a touch gesture were wanted in addition, after this one.
+- **Always-visible trash on every device.** Fixes touch with the least code, but takes away the clean hover look the owner asked for ("only available once the cursor is over the card"). Rejected for mouse use; kept for touch in decision 1.
+- **A swipe on a card to delete.** Discoverable only by accident, easy to trigger while scrolling, and it has no keyboard form. Would be right in an app made for the phone.
+- **Picking a range (click one, shift-click another) and "Select all".** Still not built: the cards read down columns, so "between" is unclear (as the amendment of 2026-10-16 says), and nobody asked for select all. Would be right if brands grew to hundreds of items.
