@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link2, X } from "lucide-react";
+import { Link2, Type, X } from "lucide-react";
 import { addItem, type Item } from "./api";
 import { webAddress } from "./address";
 import { readLookup, writeLookup } from "./lookup";
@@ -25,6 +25,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
   const [source, setSource] = useState<string | null>(null);
   const [keepSource, setKeepSource] = useState(false);
   const [lookup, setLookup] = useState(readLookup); // ADR 008: an address with no picture is looked up after it is added, unless unchecked
+  const [writing, setWriting] = useState(false); // the "Add text only" button was pressed: the field shows with no image or address (ADR 002, amendment of 2026-10-18)
   const [typing, setTyping] = useState(false); // the field for an address typed, opened by the link button
   const [typed, setTyped] = useState("");
   const [queue, setQueue] = useState<Queued[]>([]);
@@ -75,7 +76,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
   }, [source]);
 
   const first = queue[0];
-  const ready = first !== undefined || source !== null;
+  const ready = first !== undefined || source !== null || writing;
   const lookingUp = source !== null && first === undefined; // the lookup is only made for an address with no picture of its own
   useEffect(() => {
     if (ready) input.current?.focus(); // the field appears when there is something to describe, and typing starts there
@@ -92,6 +93,12 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
   function drop(queued: Queued) {
     URL.revokeObjectURL(queued.url);
     setQueue((current) => current.filter((one) => one !== queued));
+  }
+
+  function cancel() {
+    setWriting(false);
+    setDescription("");
+    setError(null);
   }
 
   function takeTyped() {
@@ -122,6 +129,10 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
+    if (first === undefined && source === null && description.trim() === "") {
+      setError("Write something first.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const sent = queue[0]; // by identity: the picture may be removed while it is on its way, and the next one must stay
@@ -134,6 +145,7 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
       return;
     }
     setDescription("");
+    setWriting(false);
     if (!keepSource) setSource(null);
     if (sent !== undefined) drop(sent);
     setBusy(false);
@@ -148,7 +160,12 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
       className="flex flex-col gap-3 p-4"
     >
       {!ready ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">paste / drop image here</p>
+        <div className="flex flex-col items-center gap-2 py-8">
+          <p className="text-center text-sm text-muted-foreground">paste / drop image here</p>
+          <button type="button" aria-label="Add text only" title="Add text only" onClick={() => setWriting(true)} className={`${ICON} border border-input pointer-coarse:size-11`}>
+            <Type aria-hidden="true" className="size-4" />
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           {first !== undefined && (
@@ -173,6 +190,11 @@ export default function Composer({ slug, onAdded }: { slug: string; onAdded: (it
               placeholder="What is this for?"
               className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
             />
+            {first === undefined && source === null && (
+              <button type="button" aria-label="Cancel" title="Cancel" onClick={cancel} className={`${ICON} pointer-coarse:size-11`}>
+                <X aria-hidden="true" className="size-4" />
+              </button>
+            )}
             {source === null && (
               <button
                 type="button"

@@ -997,6 +997,87 @@ describe("adding an item", () => {
     expect(server.calls.filter((c) => c.path === "/api/brands/alpha")).toHaveLength(2); // asked again after the add
   });
 
+  describe("text only (ADR 002, amendment of 2026-10-18)", () => {
+    it("has a button in the empty box, with no visible text of its own", async () => {
+      await ready();
+      const box = screen.getByRole("form", { name: "Add an item" });
+      const button = within(box).getByRole("button", { name: "Add text only" });
+      expect(button.textContent).toBe("");
+      expect(button.className).toContain("pointer-coarse:size-11");
+      expect(box.textContent).toBe("paste / drop image here");
+    });
+
+    it("shows the focused field and a Cancel button when pressed", async () => {
+      await ready();
+      fireEvent.click(screen.getByRole("button", { name: "Add text only" }));
+      const field = screen.getByLabelText("Description");
+      await waitFor(() => expect(document.activeElement).toBe(field));
+      expect(screen.queryByText("paste / drop image here")).toBeNull();
+      expect(screen.getByRole("button", { name: "Cancel" }).className).toContain("pointer-coarse:size-11");
+      expect(screen.getByRole("button", { name: "Add the address of the original" })).toBeTruthy();
+    });
+
+    it("sends the words alone with Enter, then goes back to the empty box with a card for them", async () => {
+      const { server } = await ready();
+      fireEvent.click(screen.getByRole("button", { name: "Add text only" }));
+      const field = screen.getByLabelText("Description");
+      fireEvent.change(field, { target: { value: "just words" } });
+      fireEvent.submit(field.closest("form")!);
+      await screen.findByText("just words", { selector: "p" });
+      expect(server.calls.find((c) => c.method === "POST")?.body).toEqual({ description: "just words", source: null, image: null });
+      expect(screen.getByText("paste / drop image here")).toBeTruthy();
+      expect(screen.queryByLabelText("Description")).toBeNull();
+    });
+
+    it("sends nothing for an empty field and says so", async () => {
+      const { server } = await ready();
+      fireEvent.click(screen.getByRole("button", { name: "Add text only" }));
+      const field = screen.getByLabelText("Description");
+      fireEvent.change(field, { target: { value: "   " } });
+      fireEvent.submit(field.closest("form")!);
+      expect((await screen.findByRole("alert")).textContent).toBe("Write something first.");
+      expect(server.calls.some((c) => c.method === "POST")).toBe(false);
+      expect(screen.getByLabelText("Description")).toBeTruthy(); // the field stays
+    });
+
+    it("goes back to the empty box with Cancel, forgetting what was typed and sending nothing", async () => {
+      const { server } = await ready();
+      fireEvent.click(screen.getByRole("button", { name: "Add text only" }));
+      fireEvent.change(screen.getByLabelText("Description"), { target: { value: "never mind" } });
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByText("paste / drop image here")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Add text only" }));
+      expect((screen.getByLabelText("Description") as HTMLInputElement).value).toBe("");
+      expect(server.calls.some((c) => c.method === "POST")).toBe(false);
+    });
+
+    it("still sends an image pasted while the field is open, and has no Cancel then", async () => {
+      const { server } = await ready();
+      fireEvent.click(screen.getByRole("button", { name: "Add text only" }));
+      document.dispatchEvent(pasteEvent([png()]));
+      await screen.findByRole("img", { name: "Preview of the file to add" });
+      expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+      const field = screen.getByLabelText("Description");
+      fireEvent.change(field, { target: { value: "with a picture" } });
+      fireEvent.submit(field.closest("form")!);
+      await screen.findByText("with a picture", { selector: "p" });
+      expect(server.calls.find((c) => c.method === "POST")?.body).toEqual({ description: "with a picture", source: null, image: "iVBORw==" });
+      expect(screen.getByText("paste / drop image here")).toBeTruthy();
+    });
+
+    it("shows the server's refusal if it gives one", async () => {
+      installServer([brandView("alpha")], { status: 422, error: "this would not be read back as the item given" });
+      render(<App />);
+      await shown("alpha");
+      fireEvent.click(screen.getByRole("button", { name: "Add text only" }));
+      const field = screen.getByLabelText("Description");
+      fireEvent.change(field, { target: { value: "# a heading" } });
+      fireEvent.submit(field.closest("form")!);
+      expect((await screen.findByRole("alert")).textContent).toContain("would not be read back");
+      expect(screen.getByLabelText("Description")).toBeTruthy();
+    });
+  });
+
   it("keeps the paste from also typing the image's name into the page", async () => {
     await ready();
     const event = pasteEvent([png()]);

@@ -230,3 +230,26 @@ Alternatives rejected:
 
 1. **The server forbids framing.** Decision 6 said what the page may load; it said nothing about who may load the page. Every answer now carries `frame-ancestors 'none'` in its `Content-Security-Policy` (the page's and the SVG icon's) and `X-Frame-Options: DENY`, for a browser that knows only the older header. The reason: the `Origin` check stops a forged request, but not a real click in a page that another site has framed invisibly under its own buttons, so a card's trash button and the confirmation behind it could be clicked without the owner meaning to. The policy otherwise does not change, and nothing the page loads changes with it. The test checks both headers on every kind of answer.
 2. **The select mode ends when the last item goes, in the state and not only on the screen.** The amendment of 2026-10-18 on delete said so, but the page only hid the mode while the brand had no items: the flag stayed set, so an item added afterwards came up in select mode (a checkbox on its card, a tap picking it instead of opening it, no trash button). The page now clears the flag when the brand has no items. The test deletes the only item, adds another and finds no checkbox.
+
+## Amendment (2026-10-18): an item of only typed words can be added from the page again
+
+**Asked for by the owner on 2026-10-18 ("lets also do Text-only item from the page"). The wording of the button below is mine, and waits for the owner to see it on the page.**
+
+Context: the amendment of 2026-10-16 (decision 8) took a loss knowingly: the description field appears only once an image or an address is there, so a line of words alone could not be added from the page, though the API (`POST /items` with only a `description`) and the Moodboard format (ADR 001, decision 3) take one. The owner now wants it back.
+
+Decision 4 and decision 8 of that amendment change in this place, and nothing else:
+
+1. **The empty box gains one icon button,** under the words "paste / drop image here", named "Add text only" (an icon with that name and title, no visible text, so the box still reads "paste / drop image here"). It is a plain `lucide-react` icon button like the link button, 44 px on a coarse pointer.
+2. **Pressing it shows the description field,** focused, as if an image had been pasted, with an "Cancel" icon beside it that goes back to the empty box. The link button for an address is there too, as for an image. Enter adds the item; there is no other button.
+3. **An empty description with no image and no address is not sent.** The page says "Write something first." in the box's alert, as it says "Only image files can be added." today; the server's own refusal (422) stays as the second layer.
+4. **After the add the box is empty again,** the mode is left, and a card shows the words as plain text, as a hand-written line does today (the card code already shows `text` for an item with no image and no address). Nothing about the API, the Moodboard or the vault changes: the app still writes only the description the owner typed (ADR 001, decision 3).
+
+Consequences: the loss is undone at the cost of one button and one state. A line of words is a card with no picture, so the grid gets cards of very different heights; that was already true of the owner's hand-written lines. Where the pointer is coarse, the button is the only way to start a text item, since there is nothing to paste.
+
+Tests: in `web/src/App.test.tsx`, the empty box still reads only "paste / drop image here" and has the button; pressing it shows the focused field and Cancel; Enter sends `{description, source: null, image: null}`, the box is empty again and the card shows the words; Cancel and an empty Enter send nothing; a pasted image while the mode is on keeps the mode's field and sends the image; the button is 44 px on a coarse pointer. The end-to-end test adds a text-only item against the sample vault. Each rule is checked against a weakened version with `scripts/mutate.py` (ADR 001, decision 10).
+
+Alternatives rejected:
+
+- **Typing straight into the empty box.** One fewer click, but the box would be a text field with a paste target in it, and a paste of an address or image would have to be told apart from a paste of words. It becomes right if the button is found to be in the way.
+- **A keyboard shortcut only.** No new control, but a touch device could not start a text item, and nothing on the page says the shortcut exists. Never alone.
+- **Showing the field always.** The empty box would no longer be the quiet "paste / drop image here" that the owner asked for on 2026-10-16.

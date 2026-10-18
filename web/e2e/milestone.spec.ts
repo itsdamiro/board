@@ -146,6 +146,25 @@ for (const scheme of ["light", "dark"] as const) {
       expect(problems).toEqual([]);
     });
 
+    test("a line of words alone becomes an item and the last block of the Moodboard, with no image files", async ({ page, board }) => {
+      const problems = watchProblems(page);
+      await page.getByRole("button", { name: "Add text only" }).click();
+      await expect(page.getByLabel("Description")).toBeFocused();
+      await page.getByLabel("Description").press("Enter");
+      await expect(page.getByRole("alert")).toHaveText("Write something first.");
+      expect(moodboard(board)).not.toContain("Write something");
+
+      await page.getByLabel("Description").fill("only a thought");
+      await page.getByLabel("Description").press("Enter");
+
+      await expect(page.getByText("only a thought", { exact: true })).toBeVisible();
+      await expect(page.getByLabel("Description")).toHaveCount(0); // back to the empty box
+      await expect(page.getByRole("form", { name: "Add an item" })).toHaveText("paste / drop image here");
+      expect(moodboard(board)).toMatch(/\nonly a thought\n$/);
+      expect(boardFiles(board)).toEqual([]);
+      expect(problems).toEqual([]);
+    });
+
     test("the delete button shows only over the card, asks first, and removes the block and its image files", async ({ page, board }) => {
       const problems = watchProblems(page);
       const before = moodboard(board);
@@ -361,6 +380,7 @@ for (const scheme of ["light", "dark"] as const) {
 test("the chosen brand is remembered, and each brand shows its own items", async ({ page, board }) => {
   const problems = watchProblems(page); // opening the menu must not break the Content-Security-Policy
   await page.goto(board.url);
+  await expect(page.getByRole("form", { name: "Add an item" })).toBeVisible(); // the page listens for a paste once it is shown
   await dispatchImage(page, "paste");
   await page.getByLabel("Description").fill("in one");
   await page.getByLabel("Description").press("Enter");
