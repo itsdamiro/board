@@ -65,14 +65,12 @@ def append_block(path: str, block: str) -> None:
             f.write(added)
 
 
-def delete_block(path: str, key: str) -> Block:
-    """Remove the block with this key from the note and return it, so the caller can remove its image files.
-
-    The note is rewritten through a hidden temporary file in its own folder, which is renamed over it (or deleted on failure).
-    """
+def _rewrite(path: str, change, what: str):
+    """Rewrite the note with `change(text)`, which returns (new text, block), through a hidden temporary file in its own folder that is
+    renamed over it (or deleted on failure). Refused if the note changed meanwhile. Returns the block."""
     with _lock:
         raw, text = _read(path)
-        new_text, block = moodboard.remove(text, key)
+        new_text, block = change(text)
         real = os.path.realpath(path)  # a symbolic link is replaced through, not by, the temporary file
         fd, temp = tempfile.mkstemp(dir=os.path.dirname(real), prefix=".board-", suffix=".tmp")
         try:
@@ -80,10 +78,25 @@ def delete_block(path: str, key: str) -> Block:
                 f.write(new_text.encode("utf-8"))
             shutil.copymode(real, temp)
             if _read(real)[0] != raw:
-                raise NoteChanged("the note changed while it was being written; nothing was removed, try again")
+                raise NoteChanged(f"the note changed while it was being written; nothing was {what}, try again")
             os.replace(temp, real)
         except BaseException:
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(temp)
             raise
         return block
+
+
+def delete_block(path: str, key: str) -> Block:
+    """Remove the block with this key from the note and return it, so the caller can remove its image files."""
+    return _rewrite(path, lambda text: moodboard.remove(text, key), "removed")
+
+
+def replace_block(path: str, key: str, block: str, accept=lambda old: True) -> Block:
+    """Replace the block with this key by `block` and return the old one (ADR 009). `accept(old)` is asked under the lock and
+    raises to refuse, so the check and the write are one step."""
+    def change(text: str) -> tuple[str, Block]:
+        new_text, old = moodboard.replace(text, key, block)
+        accept(old)
+        return new_text, old
+    return _rewrite(path, change, "changed")

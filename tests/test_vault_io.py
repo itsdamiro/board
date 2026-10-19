@@ -187,3 +187,48 @@ class VaultIoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReplaceBlockTest(VaultIoTest):
+    def test_the_block_is_replaced_and_the_old_one_returned(self):
+        key = vault_io.read_blocks(self.path)[1].key
+        old = vault_io.replace_block(self.path, key, "changed")
+        self.assertEqual(old.description, "second")
+        with open(self.path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), NOTE.replace("second", "changed"))
+        self.assertEqual(os.listdir(self.dir), ["note.md"])  # no temporary file is left
+
+    def test_a_refusal_by_accept_writes_nothing(self):
+        key = vault_io.read_blocks(self.path)[1].key
+
+        def refuse(old):
+            raise moodboard.MoodboardError("no")
+
+        with self.assertRaises(moodboard.MoodboardError):
+            vault_io.replace_block(self.path, key, "changed", refuse)
+        with open(self.path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), NOTE)
+        self.assertEqual(os.listdir(self.dir), ["note.md"])
+
+    def test_a_block_that_changed_is_refused(self):
+        key = vault_io.read_blocks(self.path)[1].key
+        self.write("note.md", NOTE.replace("second", "edited").encode())
+        with self.assertRaises(moodboard.BlockNotFound):
+            vault_io.replace_block(self.path, key, "changed")
+
+    def test_a_note_that_changes_while_it_is_written_is_refused_and_untouched(self):
+        key = vault_io.read_blocks(self.path)[1].key
+        real = vault_io._read
+        calls = []
+
+        def read(path):
+            calls.append(path)
+            if len(calls) == 2:  # the check after the temporary file is written
+                self.write("note.md", NOTE.replace("second", "edited").encode())
+            return real(path)
+
+        with mock.patch.object(vault_io, "_read", read), self.assertRaisesRegex(vault_io.NoteChanged, "nothing was changed, try again"):
+            vault_io.replace_block(self.path, key, "changed")
+        with open(self.path, encoding="utf-8") as f:
+            self.assertIn("edited", f.read())
+        self.assertEqual(os.listdir(self.dir), ["note.md"])

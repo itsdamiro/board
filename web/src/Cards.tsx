@@ -4,6 +4,9 @@ import { itemCards, type Card, type PlacedItem } from "./cardOrder";
 import type { Columns } from "./useColumns";
 import { ConfirmDelete, DeleteButton } from "./DeleteItem";
 import { keyIsTaken } from "./keys";
+import CardForm from "./CardForm";
+import EditButton from "./EditButton";
+import SpecialBody from "./SpecialCards";
 import Viewer from "./Viewer";
 import { itemWords, type Brand, type Item, type Panel } from "./api";
 
@@ -14,6 +17,7 @@ import { itemWords, type Brand, type Item, type Panel } from "./api";
 const LINK = "focus-visible:outline-2 focus-visible:outline-ring";
 
 function ItemCard({ item, pending, onView }: { item: Item; pending: boolean; onView: (opener: HTMLElement) => void }) {
+  if (item.card !== null) return <SpecialBody card={item.card} />; // ADR 009: a colours, text or type card
   const words = item.description !== "" ? item.description : item.source === null && item.image === null ? item.text : "";
   const icon = item.image === null ? item.preview : null;
   return (
@@ -150,6 +154,7 @@ export default function Cards({
   const [viewing, setViewing] = useState<string | null>(null);
   // Cards picked with shift-click, to delete together. A key of an item no longer in the brand is ignored, and one that was just removed is dropped.
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [editing, setEditing] = useState<PlacedItem | null>(null); // the special card whose form is open (ADR 009)
   const [deleting, setDeleting] = useState<PlacedItem[] | null>(null); // the items the open question is about: one card's, or the picked ones
   const selection = placed.filter((entry) => picked.has(entry.key));
   const none = selection.length === 0;
@@ -218,6 +223,9 @@ export default function Cards({
                 }}
               />
               {card.kind === "item" && selecting && <PickBox item={card.item} picked={isPicked} />}
+              {card.kind === "item" && !selecting && card.item.card !== null && (
+                <EditButton label={itemWords(card.item)} onAsk={() => setEditing({ key: card.key, item: card.item })} />
+              )}
               {card.kind === "item" && !selecting && <DeleteButton item={card.item} onAsk={() => setDeleting([{ key: card.key, item: card.item }])} />}
             </li>
           );
@@ -253,6 +261,15 @@ export default function Cards({
             Done
           </button>
         </output>
+      )}
+      {editing?.item.card != null && (
+        <CardForm
+          slug={slug}
+          kind={editing.item.card.kind}
+          editing={{ key: editing.item.key, card: editing.item.card }}
+          onSaved={() => onChanged()}
+          onClose={() => setEditing(null)}
+        />
       )}
       {deleting !== null && <ConfirmDelete slug={slug} items={deleting} onDone={done} onClose={() => setDeleting(null)} />}
       {viewed >= 0 && (

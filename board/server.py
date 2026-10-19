@@ -41,6 +41,7 @@ PAGE_TYPES = {  # the only files the page route serves, each with its own type (
     ".css": "text/css; charset=utf-8",
     ".woff2": "font/woff2",
     ".woff": "font/woff",
+    ".svg": "image/svg+xml",  # the favicon, a file of our own build, sent with the SVG policy (ADR 002, amendment of 2026-10-20)
 }
 MAX_BODY = images.MAX_BYTES * 4 // 3 + 64 * 1024  # a 25 MB image in base64, and the text around it
 _BRAND, _KEY = r"(?P<slug>[^/]+)", r"(?P<key>[0-9a-f]{64})"
@@ -53,6 +54,7 @@ ROUTES = [
     ("GET", re.compile(rf"/api/brands/{_BRAND}/{_LINK}"), "link"),
     ("POST", re.compile(rf"/api/brands/{_BRAND}/items"), "add"),
     ("POST", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}/lookup"), "lookup"),
+    ("PUT", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}"), "edit"),
     ("DELETE", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}"), "delete"),
     ("GET", re.compile(r"/(?!api/)(?P<name>.*)"), "page"),  # last, and never under /api: an unknown API address stays a JSON 404
 ]
@@ -166,7 +168,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json(status, {"error": str(err)})
 
-    do_GET = do_HEAD = do_POST = do_DELETE = _handle
+    do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = _handle
 
     def _route_brands(self) -> None:
         self._json(HTTPStatus.OK, {"brands": vault.list_brands(self.server.vault)})
@@ -197,10 +199,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise Failure(HTTPStatus.NOT_FOUND, "the page is not built yet: run `npm run build` in the web folder")
             raise Failure(HTTPStatus.NOT_FOUND, "no such address")
         with open(path, "rb") as f:
-            self._send(HTTPStatus.OK, f.read(), PAGE_TYPES[os.path.splitext(path)[1].lower()])
+            ext = os.path.splitext(path)[1].lower()
+            self._send(HTTPStatus.OK, f.read(), PAGE_TYPES[ext], csp=SVG_CSP if ext == ".svg" else CSP)
 
     def _route_add(self, slug: str) -> None:
         data = self._body()
+        if "card" in data:  # ADR 009: a card is the whole item, so nothing else comes with it
+            if len(data) > 1:
+                raise Failure(HTTPStatus.BAD_REQUEST, "a card comes alone, without a description, address or image")
+            self._json(HTTPStatus.CREATED, items.add_card(self.server.vault, slug, data["card"]))
+            return
         description, source, picture = data.get("description", ""), data.get("source"), data.get("image")
         if not (isinstance(description, str) and isinstance(source, (str, type(None))) and isinstance(picture, (str, type(None)))):
             raise Failure(HTTPStatus.BAD_REQUEST, "description, source and image must be text or null")
@@ -209,6 +217,12 @@ class Handler(BaseHTTPRequestHandler):
         except binascii.Error as err:
             raise Failure(HTTPStatus.BAD_REQUEST, "the image is not valid base64") from err
         self._json(HTTPStatus.CREATED, items.add_item(self.server.vault, slug, description, source, image))
+
+    def _route_edit(self, slug: str, key: str) -> None:
+        data = self._body()
+        if set(data) != {"card"}:
+            raise Failure(HTTPStatus.BAD_REQUEST, "an edit is {\"card\": {...}}")
+        self._json(HTTPStatus.OK, items.edit_card(self.server.vault, slug, key, data["card"]))
 
     def _route_lookup(self, slug: str, key: str) -> None:
         self._json(HTTPStatus.OK, items.look_up_item(self.server.vault, slug, key))

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { getBrand, listBrands, lookUpItem, type Brand, type Item } from "./api";
+import { getBrand, listBrands, lookUpItem, type Brand, type CardInput, type Item } from "./api";
+import AddCardMenu from "./AddCardMenu";
 import BrandSelect from "./BrandSelect";
+import CardForm from "./CardForm";
 import Cards from "./Cards";
 import ColumnButtons from "./ColumnButtons";
 import Composer from "./Composer";
@@ -21,6 +23,7 @@ export default function App() {
   const [reload, setReload] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set()); // keys of the items whose address is being looked up
+  const [adding, setAdding] = useState<CardInput["kind"] | null>(null); // the kind of special card whose form is open (ADR 009)
   const [selectMode, setSelectMode] = useState(false); // the select mode of ADR 002, amendment of 2026-10-18
   const columns = useColumns();
 
@@ -105,7 +108,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <header className="flex items-center justify-between gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4">
         <h1>
           {brands !== null && brands.length > 0 ? (
             <BrandSelect brands={brands} current={slug} onChoose={choose} />
@@ -113,7 +116,8 @@ export default function App() {
             <span className="px-2 text-3xl">Board</span>
           )}
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {brand?.moodboard.exists === true && <AddCardMenu onChoose={setAdding} />}
           {hasItems && <SelectButton selecting={selecting} onToggle={() => setSelectMode(!selecting)} />}
           {columns.choosable && cards.length > 0 && <ColumnButtons columns={columns} />}
           <ThemeToggle />
@@ -152,6 +156,7 @@ export default function App() {
               onChanged={refresh}
               adder={brand.moodboard.exists ? <Composer slug={brand.slug} onAdded={added} /> : undefined}
             />
+            {adding !== null && <CardForm slug={brand.slug} kind={adding} onSaved={refresh} onClose={() => setAdding(null)} />}
           </>
         )}
       </main>

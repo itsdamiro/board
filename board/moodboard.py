@@ -7,6 +7,7 @@ and returns a note's new text for an append or a removal. It touches no file: va
 What it promises, each with a test:
 - append only adds text after the existing text, never changes what is already there;
 - remove deletes the lines of one block, plus at most one blank line, and nothing else;
+- replace swaps the lines of one block for the lines of another and changes nothing else (ADR 009, the card's edit);
 - a block is found by the hash of its exact text, so a block edited since it was shown is refused;
 - a text it cannot place safely (frontmatter never closed) is refused, not guessed at.
 A heading block and the frontmatter are not items; a heading block is a first line starting with `#` and every line under
@@ -169,3 +170,23 @@ def remove(text: str, key: str) -> tuple[str, Block]:
     if block.start < len(lines) and (block.start == 0 or _blank(lines[block.start - 1])):  # the line now at `start` is blank
         del lines[block.start]
     return "\n".join(lines), block
+
+
+def replace(text: str, key: str, block: str) -> tuple[str, Block]:
+    """`text` with the one block whose key this is replaced by `block` (from format_block or cards.format_card), and the old block.
+
+    Everything else in the note is kept byte for byte, the new block gets the line ending of the first line it replaces.
+    Raises BlockNotFound or AmbiguousBlock. Only ADR 009's edit of a card uses it (it is the one place a block is changed).
+    """
+    found = [b for b in parse(text) if b.key == key]
+    if not found:
+        raise BlockNotFound(NOT_FOUND)
+    if len(found) > 1:
+        raise AmbiguousBlock(f"{len(found)} blocks have exactly this text; remove the extra copies by hand first")
+    old = found[0]
+    if "\r" in block or any(_blank(line) for line in block.split("\n")):
+        raise MoodboardError("a block has no blank line and no carriage return")
+    lines = text.split("\n")
+    cr = "\r" if lines[old.start].endswith("\r") else ""
+    lines[old.start:old.end] = [line + cr for line in block.split("\n")]
+    return "\n".join(lines), old

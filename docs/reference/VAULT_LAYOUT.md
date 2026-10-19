@@ -45,6 +45,24 @@ A color combination to try for the footer.
 
 A reader takes a first line that starts with `![[` as the image, a last line that matches `[source](…)` as the link, and everything between as the description. The second block above has no image and no address. The frontmatter is skipped. A heading (a line starting with `#` and a space) and the lines under it, up to the next blank line, are not an item, so leave a blank line after a heading. A `[source](...)` line whose address is not http or https stays part of the description.
 
+## Special cards: colours, titled text and type
+
+Three shapes of block, with no image and no address, are shown by the app as cards of their own; in a note they are ordinary text. The app writes them from its Add card menu, and reads them wherever it finds them.
+
+```
+**Primary**              colours: an optional bold title, then 1 to 12 lines of a hex value (3 or 6 digits)
+#1A2B3C Deep ink         and an optional name after a space; the app writes the hex in capitals
+#F5E9D3 Paper
+
+**Mission**              text: a bold title alone on the first line, then your words (no blank line)
+To make it quiet.
+
+Font: Fauna One          type: "Font: " and a name (letters, digits, spaces, hyphens; 60 at most), then notes
+Headings
+```
+
+A block that fits none of these is an ordinary item. A hex line with other words (`#fff is too harsh`) is a palette of one colour named by the words. The editing of these blocks is the exception to "never edits a block": the pencil on a card replaces that block by a card of the same kind, only if the block's text is unchanged since the page showed it, and nothing else in the note changes (ADR 009, decision 4). Workflow ADR 018 still says the app never edits a block; it needs a matching amendment, which is not written yet.
+
 ## Address lookups
 
 When you add an address with no picture, the app fetches that page once (unless you untick the lookup for that item) and keeps its title and icon in `Board/<slug>/links/`. The files are named by the first 16 hex characters of the SHA-256 of the exact address: `<hash>.json` holds `{title, preview, fetched}`, and `<hash>.<ext>` is the icon's thumbnail, always a PNG for an ICO file (the original is not kept; an SVG icon is the one exception: it is kept as `<hash>.svg`, byte for byte as the site sent it, after a check that refuses scripts and references to anything outside the file (ADR 008, amendment of 2026-10-17), so a tool that opens it shows what the site sent; a thumbnail kept before ADR 008's amendment of 2026-10-17 is a larger `og:image`). Nothing is written into the Moodboard note: a page's title is another person's text, so it is shown by the app and never becomes your description. Deleting an item removes these files too, unless another block in that Moodboard has the same address. Any tool that reads `Board/` must tolerate this folder.
@@ -52,7 +70,7 @@ When you add an address with no picture, the app fetches that page once (unless 
 ## What the app may write
 
 - It appends a block at the end of a Moodboard note and writes files under `Board/<slug>/` (including `links/`). To delete a block it rewrites the note through a hidden temporary file (`.board-<random>.tmp`) in the same folder, renamed over the note, or removed if anything fails.
-- It never edits a block and never edits any other note. If you edit a block by hand, it is shown as it stands.
+- It never edits another note, and never edits a block except the one exception of ADR 009 below: the owner's click on the pencil of a special card. If you edit a block by hand, it is shown as it stands.
 - Deleting an item in the app removes its block and the image files its embed names, and nothing else. It does so only when you click delete on that block, and only if the block's text is unchanged since the page showed it. This applies to a block you wrote by hand as well, since the format has no marker for who wrote a block.
 - The description is the text you typed; the app writes no text of its own into a note.
 

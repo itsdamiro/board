@@ -12,3 +12,4 @@ Lightweight records for anything durable. Format: `TEMPLATE.md`. Standard: `docs
 | [006](006-playwright-tests-the-milestone-flow-against-a-sample-vault.md) | Playwright tests the milestone flow in a real browser against a sample vault | Accepted |
 | [007](007-oxlint-lints-the-page-and-its-support-packages-are-recorded.md) | Oxlint lints the page, and the page's support packages are recorded | Accepted |
 | [008](008-the-server-looks-up-an-address-once-under-strict-limits.md) | The server looks up an address's title and preview once, under strict limits, and keeps the result beside the images, never in a note | Accepted |
+| [009](009-special-cards-for-colours-text-and-type.md) | Three special cards (colours, titled text, type) are plain-text blocks the server recognises, added from a header button and edited in place | Accepted |

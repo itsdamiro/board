@@ -1,4 +1,4 @@
-"""What the API does with items: show a brand with its items, add one, look an address up, delete one (ADR 001, decisions 3, 4, 5, 8).
+"""What the API does with items: show a brand with its items, add one, look an address up, delete one (ADR 001, decisions 3, 4, 5, 8) and the special cards (ADR 009).
 
 Every function takes the vault path `find_vault` checked and a slug, and gets the Moodboard's path from
 vault.moodboard_path, which refuses any slug that is not a brand folder and any Moodboard that is a link. The Moodboard note
@@ -16,7 +16,7 @@ import logging
 import os
 from urllib.parse import quote
 
-from board import images, links, lookup, moodboard, vault, vault_io
+from board import cards, images, links, lookup, moodboard, vault, vault_io
 from board.moodboard import Block, MoodboardError
 
 log = logging.getLogger("board.items")
@@ -52,9 +52,15 @@ def item_view(vault_path: str, slug: str, block: Block) -> dict:
         "thumb": _url(slug, "thumbs", block) if block.image_id else None,
         "width": size[0] if size else None,  # of the thumbnail, so the page can reserve the space before it loads
         "height": size[1] if size else None,
+        "card": _card(block),
         "date": _id_date(block.image_id),  # brand_view gives an item with no date of its own the one before it
         **_link_fields(vault_path, slug, block),
     }
+
+
+def _card(block: Block) -> dict | None:
+    """The special card (ADR 009) a block is, or None: only a block with no embed and no address can be one."""
+    return None if block.embed is not None or block.source is not None else cards.read(block.description)
 
 
 def _link_fields(vault_path: str, slug: str, block: Block) -> dict:
@@ -112,6 +118,34 @@ def add_item(vault_path: str, slug: str, description: str, source: str | None, i
         if image_id:
             images.remove(vault_path, slug, image_id, ext)
         raise
+    return item_view(vault_path, slug, moodboard.parse(block)[0])
+
+
+def add_card(vault_path: str, slug: str, card: object) -> dict:
+    """Add a special card (ADR 009) at the end of the brand's Moodboard and return its view. Raises ItemError, MoodboardError."""
+    path = _existing_moodboard(vault_path, slug)
+    block = cards.format_card(card)  # validates before anything is written
+    vault_io.append_block(path, block)
+    return item_view(vault_path, slug, moodboard.parse(block)[0])
+
+
+def edit_card(vault_path: str, slug: str, key: str, card: object) -> dict:
+    """Replace the special card with this key (unchanged since shown) by a card of the same kind and return its view (ADR 009, decision 4).
+
+    Refused if the block is not a card, or the new card is of another kind: nothing else is ever edited.
+    """
+    path = _existing_moodboard(vault_path, slug)
+    block = cards.format_card(card)
+    kind = cards.read("\n".join(block.split("\n")))["kind"]  # format_card has checked that it reads back
+
+    def accept(old: Block) -> None:
+        was = _card(old)
+        if was is None:
+            raise ItemError("only a colors, text or type card can be edited")
+        if was["kind"] != kind:
+            raise ItemError("a card keeps its kind when it is edited")
+
+    vault_io.replace_block(path, key, block, accept)
     return item_view(vault_path, slug, moodboard.parse(block)[0])
 
 

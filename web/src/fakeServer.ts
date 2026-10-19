@@ -1,7 +1,7 @@
 // A stand-in for the server's API, for the page's unit tests (not part of the build): the routes of docs/reference/API.md
 // that the page uses, over brands held in memory, so an add shows up in the next read as it does with the real one.
 import { vi } from "vitest";
-import type { Brand, Item } from "./api";
+import type { Brand, CardInput, Item, SpecialCard } from "./api";
 
 export interface Call {
   method: string;
@@ -32,11 +32,17 @@ export function item(over: Partial<Item> = {}): Item {
     thumb: null,
     width: null,
     height: null,
+    card: null,
     date: null,
     title: null,
     preview: null,
     ...over,
   };
+}
+
+/** What the real server answers for a card it was given: the same fields, a type card with the Google Fonts address it writes. */
+function shown(card: CardInput): SpecialCard {
+  return card.kind === "type" ? { ...card, google: `https://fonts.google.com/specimen/${card.name.replaceAll(" ", "+")}` } : card;
 }
 
 function json(status: number, body: unknown): Response {
@@ -71,6 +77,14 @@ export function installServer(brands: Brand[], refuse?: { status: number; error:
     const found = /^\/api\/brands\/([^/]+)(\/items)?(?:\/([^/]+))?(\/lookup)?$/.exec(path);
     const brand = brands.find((b) => b.slug === decodeURIComponent(found?.[1] ?? ""));
     if (found === null || brand === undefined) return json(404, { error: "no such brand" });
+    if (method === "PUT" && found[2] !== undefined && found[3] !== undefined && found[4] === undefined) {
+      if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
+      const target = brand.moodboard.items.find((i) => i.key === decodeURIComponent(found[3] ?? ""));
+      if (target === undefined) return json(409, { error: "the item changed since it was shown" });
+      if (target.card === null) return json(422, { error: "only a colors, text or type card can be edited" });
+      target.card = shown((body as { card: CardInput }).card);
+      return json(200, target);
+    }
     if (method === "DELETE" && found[2] !== undefined && found[3] !== undefined && found[4] === undefined) {
       if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
       const key = decodeURIComponent(found[3]);
@@ -91,6 +105,12 @@ export function installServer(brands: Brand[], refuse?: { status: number; error:
     if (method === "GET" && found[2] === undefined) return json(200, brand);
     if (method === "POST" && found[2] !== undefined) {
       if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
+      if (body !== null && typeof body === "object" && "card" in body) {
+        const card = shown((body as { card: CardInput }).card);
+        const added = item({ key: `k${calls.length}`, description: "", text: "", card });
+        brand.moodboard.items.unshift(added);
+        return json(201, added);
+      }
       const sent = body as { description: string; source: string | null; image: string | null };
       const kept = sent.source === null ? undefined : brand.moodboard.items.find((i) => i.source === sent.source && (i.title !== null || i.preview !== null)); // what is kept for an address shows on every item with it
       const added = item({

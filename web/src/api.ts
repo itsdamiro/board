@@ -11,9 +11,22 @@ export interface Item {
   width: number | null;
   height: number | null;
   date: string | null; // `YYYY-MM-DDTHH:MM`, from the image id (docs/reference/API.md)
+  card: SpecialCard | null; // ADR 009: set when the block is a colours, text or type card
   title: string | null; // the looked-up page's title (ADR 008), plain text; null with no lookup
   preview: Preview | null; // the looked-up page's picture, served by the app
 }
+
+/** A special card the server recognised in a block (ADR 009); the server wrote `google`, so it is the only address the page links for a type card. */
+export type SpecialCard =
+  | { kind: "text"; title: string; body: string }
+  | { kind: "colors"; title: string; colors: { hex: string; name: string }[] }
+  | { kind: "type"; name: string; notes: string; google: string };
+
+/** What the page sends to add or edit a card; the server builds the block's text from it. */
+export type CardInput =
+  | { kind: "text"; title: string; body: string }
+  | { kind: "colors"; title: string; colors: { hex: string; name: string }[] }
+  | { kind: "type"; name: string; notes: string };
 
 export interface Preview {
   url: string;
@@ -21,8 +34,13 @@ export interface Preview {
   height: number;
 }
 
-/** What to call an item in a label, a picture's alternative text or a question: its description, or "Image". */
+/** What to call an item in a label, a picture's alternative text or a question: a card's title or font name, else its description, or "Image". */
 export function itemWords(item: Item): string {
+  const card = item.card;
+  if (card !== null) {
+    const name = card.kind === "type" ? card.name : card.title;
+    return name !== "" ? name : "Colours";
+  }
   return item.description !== "" ? item.description : "Image";
 }
 
@@ -122,4 +140,16 @@ export async function addItem(slug: string, item: NewItem): Promise<Item> {
  */
 export async function lookUpItem(slug: string, key: string): Promise<Item> {
   return (await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}/lookup`, { method: "POST" })) as Item;
+}
+
+/** Adds a special card at the end of the Moodboard (ADR 009) and returns it as the brand view shows it. */
+export async function addCard(slug: string, card: CardInput): Promise<Item> {
+  const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ card }) };
+  return (await call(`/api/brands/${encodeURIComponent(slug)}/items`, init)) as Item;
+}
+
+/** Replaces the card whose `key` the brand view gave by a card of the same kind; the server refuses it (409) if the block changed since it was shown. */
+export async function editCard(slug: string, key: string, card: CardInput): Promise<Item> {
+  const init = { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ card }) };
+  return (await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}`, init)) as Item;
 }

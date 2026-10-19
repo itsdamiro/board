@@ -12,7 +12,8 @@ The rules for the page in `web/`, from ADR 002. Read this when a task adds or ch
 
 - A shadcn component is added when a screen uses it, not in advance, and lives in `web/src/components/ui/`. Changing one beyond its tokens is noted in a comment saying why.
 - Dialogs, menus, selects and comboboxes come from Radix through shadcn, never written by hand.
-- No other component or icon library. Icons are from `lucide-react`.
+- No other component or icon library. Icons are from `lucide-react`. The favicon (`web/public/favicon.svg`) is the one copied icon, with its licence in a comment (ADR 002, amendment of 2026-10-20).
+- The special cards (colours, text, type) and their forms are in ADR 009: the header's Add card menu, a dialog form that is also the edit, a stripe that copies its hex on a click, and a pencil beside the trash button that follows its rules. A colour is set through the element's style property, never a `style=` attribute in markup.
 
 ## Accessibility
 

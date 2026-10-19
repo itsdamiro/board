@@ -267,3 +267,16 @@ Rule 1 of the amendment above ("The empty box gains one icon button") changes in
 Consequences: the box now reads "paste / drop image here" plus "Add text only" to a reader of its text, which the tests check. The icon-only version asked a person to guess; this one costs a few more pixels of height.
 
 Alternatives rejected: an icon with text beside it (more width for no new information), and the top right corner (tried on 2026-10-18, see above).
+
+## Amendment (2026-10-20): the page has a favicon
+
+**Asked for by the owner on 2026-10-20: "can you put a favicon for the app? i like the clipboard icon from Hugeicons".** The owner sent a picture of the icon; it is the `Clipboard` icon of the free Hugeicons set (two overlapping cards, one with a ring), found by rendering the set's candidates and comparing.
+
+1. **`web/public/favicon.svg`** is that icon with no background or box (the owner, 2026-10-20: "lets not put a background color or box the clipboard favicon"): dark strokes, and white strokes under `prefers-color-scheme: dark`, so it reads in a light and in a dark tab strip. `web/index.html` links it with `<link rel="icon" href="/favicon.svg" type="image/svg+xml">`. The file carries the icon's MIT notice (Copyright (c) 2025 Hugeicons) in a comment. It is a copied file, not a dependency, and not a page icon, so UI_STANDARDS' rule that `lucide-react` is the only icon source is untouched. A browser that ignores the colour scheme inside an SVG icon shows the dark strokes.
+2. **The server's page route also serves `.svg`** with type `image/svg+xml` (`PAGE_TYPES`), since it served only scripts, styles, fonts and HTML before and the browser's request for the icon would have got a 404. The route serves files of `web/dist/` only, which is our own build; it is sent with the SVG policy of ADR 008 (`sandbox; default-src 'none'; style-src 'unsafe-inline'`) and `nosniff`, so a script in it would not run, and its colour-scheme rule (an inline style) is allowed. Nothing else about what the server serves, binds or checks changes.
+
+Consequences: one new file type is served from the built page; a future file in `web/public` of another type needs its own line in `PAGE_TYPES`.
+
+Tests: the page test serves a synthetic `favicon.svg` and expects `image/svg+xml`.
+
+Alternatives rejected: an `.ico` or PNG (more files and sizes for the same picture), and a `data:` URI in the page (the policy refuses it, GOTCHAS).

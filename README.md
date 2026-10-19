@@ -22,7 +22,7 @@ It writes in two places only, both inside the vault you point it at:
 - Image files and thumbnails under `Board/<brand>/`, and, for an address you add with no picture, the page's title and a thumbnail of its icon under `Board/<brand>/links/` (the server fetches the page once; see [`SECURITY.md`](SECURITY.md) for what it may reach). The title is never written into your note.
 - Blocks it created, at the end of `Brands/<brand>/<brand> - Moodboard.md`.
 
-It never edits another note and never edits a block. Deleting an item removes only the block you click delete on, and only if its text is unchanged since the page showed it; that includes a block you wrote by hand, because the format cannot tell who wrote a block. The exact layout and block format are in [`docs/reference/VAULT_LAYOUT.md`](docs/reference/VAULT_LAYOUT.md).
+It never edits another note, and edits a block only when you press the pencil on a colours, text or font card you added from the Add card menu, and only if its text is unchanged since the page showed it (ADR 009). Deleting an item removes only the block you click delete on, and only if its text is unchanged since the page showed it; that includes a block you wrote by hand, because the format cannot tell who wrote a block. The exact layout and block format are in [`docs/reference/VAULT_LAYOUT.md`](docs/reference/VAULT_LAYOUT.md).
 
 **Back up your vault, and the `Board/` folder, before first use.** `Board/` is meant to be kept out of git, so nothing else holds a copy of your images. The software is provided as is, with no warranty (see the licence).
 

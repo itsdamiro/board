@@ -275,3 +275,40 @@ class RemoveTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReplaceTest(unittest.TestCase):
+    A, B, C = FULL, BARE, "third"
+
+    def three(self, tail="\n"):
+        return f"{FM}\n{self.A}\n\n{self.B}\n\n{self.C}{tail}"
+
+    def replace(self, text, index, block):
+        return m.replace(text, m.parse(text)[index].key, block)
+
+    def test_one_block_is_swapped_and_everything_else_is_kept_byte_for_byte(self):
+        self.assertEqual(self.replace(self.three(), 1, "new\nlines")[0], f"{FM}\n{self.A}\n\nnew\nlines\n\n{self.C}\n")
+        self.assertEqual(self.replace(self.three(), 0, "x")[0], f"{FM}\nx\n\n{self.B}\n\n{self.C}\n")
+        self.assertEqual(self.replace(self.three(""), 2, "x")[0], f"{FM}\n{self.A}\n\n{self.B}\n\nx")
+        self.assertEqual(self.replace(self.three(), 1, "x")[1], m.parse(self.three())[1])
+
+    def test_a_note_with_windows_line_endings_keeps_them(self):
+        text = self.three().replace("\n", "\r\n")
+        self.assertEqual(self.replace(text, 1, "a\nb")[0], f"{FM}\n{self.A}\n\na\nb\n\n{self.C}\n".replace("\n", "\r\n"))
+
+    def test_a_block_that_changed_or_is_not_there_is_refused(self):
+        shown = m.parse(self.three())[1].key
+        with self.assertRaises(m.BlockNotFound):
+            m.replace(self.three().replace(self.B, self.B + " edited"), shown, "x")
+        with self.assertRaises(m.BlockNotFound):
+            m.replace(self.three(), "0" * 64, "x")
+
+    def test_two_identical_blocks_are_not_guessed_between(self):
+        text = f"{FM}\n{self.B}\n\n{self.B}\n"
+        with self.assertRaises(m.AmbiguousBlock):
+            m.replace(text, m.parse(text)[0].key, "x")
+
+    def test_a_new_block_with_a_blank_line_or_a_carriage_return_is_refused(self):
+        for block in ("a\n\nb", "a\r\nb", "", "a\n \nb"):
+            with self.subTest(block=block), self.assertRaises(m.MoodboardError):
+                self.replace(self.three(), 1, block)

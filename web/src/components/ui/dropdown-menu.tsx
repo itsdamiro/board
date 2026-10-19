@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 
-// shadcn's DropdownMenu (new-york), as copied by its CLI, with the radio group and its items only. Changed beyond its
+// shadcn's DropdownMenu (new-york), as copied by its CLI, with the radio group, its items and a plain item (the Add card menu, ADR 009). Changed beyond its
 // tokens: the popup uses the card tokens, because the theme has no popover tokens (UI_STANDARDS). Used in place of a Select
 // because the Select writes <style> elements, which the server's Content-Security-Policy refuses (ADR 002, amendment on the cards).
 
@@ -24,6 +24,18 @@ function DropdownMenuContent({ className, ...props }: ComponentProps<typeof Menu
   );
 }
 
+function DropdownMenuItem({ className, ...props }: ComponentProps<typeof MenuPrimitive.Item>) {
+  return (
+    <MenuPrimitive.Item
+      className={cn(
+        "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none pointer-coarse:min-h-11 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 function DropdownMenuRadioItem({ className, children, ...props }: ComponentProps<typeof MenuPrimitive.RadioItem>) {
   return (
     <MenuPrimitive.RadioItem
@@ -41,4 +53,4 @@ function DropdownMenuRadioItem({ className, children, ...props }: ComponentProps
   );
 }
 
-export { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger };
+export { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger };

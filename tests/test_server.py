@@ -57,7 +57,7 @@ class ServerCase(VaultCase):
         self.web = os.path.join(os.path.dirname(self.vault), "dist")  # a synthetic built page; a file beside it that must never be served
         os.makedirs(os.path.join(self.web, "assets"))
         for name, text in (("index.html", "<!doctype html><title>page</title>"), ("theme-init.js", "// theme"), ("assets/app-1a2b.js", "// app"),
-                           ("assets/app-1a2b.css", "body{}"), ("assets/font-9z.woff2", "wOF2"), ("assets/a b.js", "// spaced"), ("assets/data.json", "{}"), (".hidden.js", "// hidden")):
+                           ("assets/app-1a2b.css", "body{}"), ("assets/font-9z.woff2", "wOF2"), ("assets/a b.js", "// spaced"), ("favicon.svg", "<svg/>"), ("assets/data.json", "{}"), (".hidden.js", "// hidden")):
             with open(os.path.join(self.web, name), "w", encoding="utf-8") as f:
                 f.write(text)
         with open(os.path.join(os.path.dirname(self.web), "secret.js"), "w", encoding="utf-8") as f:
@@ -267,13 +267,18 @@ class PageTest(ServerCase):
         for path, content_type, text in (("/", "text/html; charset=utf-8", "<!doctype html><title>page</title>"), ("/index.html", "text/html; charset=utf-8", None),
                                          ("/theme-init.js", "text/javascript; charset=utf-8", "// theme"), ("/assets/app-1a2b.js", "text/javascript; charset=utf-8", "// app"),
                                          ("/assets/app-1a2b.css", "text/css; charset=utf-8", "body{}"), ("/assets/font-9z.woff2", "font/woff2", "wOF2"),
-                                         ("/assets/a%20b.js", "text/javascript; charset=utf-8", "// spaced")):
+                                         ("/assets/a%20b.js", "text/javascript; charset=utf-8", "// spaced"), ("/favicon.svg", "image/svg+xml", "<svg/>")):
             with self.subTest(path=path):
                 status, response, body = self.call("GET", path, origin=None)
                 self.assertEqual((status, response.getheader("Content-Type")), (200, content_type))
                 self.assertEqual(response.getheader("Content-Length"), str(len(body)))
                 if text:
                     self.assertEqual(body, text.encode())
+
+    def test_the_favicon_is_sent_with_the_svg_policy(self):
+        _, response, _ = self.call("GET", "/favicon.svg", origin=None)
+        self.assertEqual(response.getheader("Content-Security-Policy"), server.SVG_CSP)
+        self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
 
     def test_a_page_answer_carries_the_security_headers_and_is_not_cached(self):
         for path in ("/", "/assets/app-1a2b.js"):
@@ -760,3 +765,62 @@ class LookupRouteTest(ServerCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CardRouteTest(ServerCase):
+    PALETTE = {"kind": "colors", "title": "Primary", "colors": [{"hex": "#1a2b3c", "name": "Deep ink"}]}
+
+    def add_card(self, card=PALETTE, slug="alpha"):
+        return self.json("POST", f"/api/brands/{slug}/items", {"card": card})
+
+    def test_a_card_is_added_201_and_listed_with_its_card(self):
+        status, item = self.add_card()
+        self.assertEqual(status, 201)
+        self.assertEqual(item["card"]["colors"], [{"hex": "#1A2B3C", "name": "Deep ink"}])
+        self.assertEqual(self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"][0]["card"], item["card"])
+
+    def test_a_card_comes_alone(self):
+        before = self.moodboard_text()
+        for extra in ({"description": "x"}, {"source": None}, {"image": None}):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.json("POST", "/api/brands/alpha/items", {"card": self.PALETTE, **extra})[0], 400)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_bad_card_is_422(self):
+        for card in ({"kind": "text"}, {"kind": "colors", "colors": [{"hex": "x"}]}, "colors", None, 3):
+            with self.subTest(card=card):
+                self.assertEqual(self.add_card(card)[0], 422)
+        self.assertEqual(self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"], [])
+
+    def test_an_edit_replaces_the_card_200(self):
+        key = self.add_card()[1]["key"]
+        status, item = self.json("PUT", f"/api/brands/alpha/items/{key}", {"card": {**self.PALETTE, "colors": [{"hex": "#000"}]}})
+        self.assertEqual((status, item["card"]["colors"]), (200, [{"hex": "#000", "name": ""}]))
+        self.assertEqual([i["key"] for i in self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"]], [item["key"]])
+
+    def test_an_edit_is_refused_by_status(self):
+        key = self.add_card()[1]["key"]
+        plain = self.add("plain")[1]["key"]
+        before = self.moodboard_text()
+        path = "/api/brands/alpha/items/"
+        for status, target, body in ((409, "f" * 64, {"card": self.PALETTE}),  # no block has this key
+                                     (422, plain, {"card": self.PALETTE}),  # not a card
+                                     (422, key, {"card": {"kind": "text", "title": "T", "body": "x"}}),  # another kind
+                                     (422, key, {"card": {"kind": "colors", "colors": []}}),
+                                     (400, key, {}), (400, key, {"card": self.PALETTE, "description": "x"}), (400, key, {"description": "x"}),
+                                     (404, "short", {"card": self.PALETTE})):
+            with self.subTest(target=target[:6], body=list(body)):
+                self.assertEqual(self.json("PUT", path + target, body)[0], status)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_an_edit_needs_the_origin_and_json_like_every_change(self):
+        key = self.add_card()[1]["key"]
+        path = f"/api/brands/alpha/items/{key}"
+        self.assertEqual(self.json("PUT", path, {"card": self.PALETTE}, origin=None)[0], 403)
+        self.assertEqual(self.json("PUT", path, {"card": self.PALETTE}, origin="http://evil.test")[0], 403)
+        self.assertEqual(self.call("PUT", path, raw=b"x", headers={"Content-Type": "text/plain"})[0], 415)
+
+    def test_an_edit_in_a_brand_with_no_moodboard_is_409_and_in_no_brand_404(self):
+        self.make_brand("beta", moodboard=None)
+        self.assertEqual(self.json("PUT", f"/api/brands/beta/items/{'a' * 64}", {"card": self.PALETTE})[0], 409)
+        self.assertEqual(self.json("PUT", f"/api/brands/nobody/items/{'a' * 64}", {"card": self.PALETTE})[0], 404)

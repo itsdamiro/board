@@ -135,7 +135,7 @@ class BrandViewTest(VaultCase):
         self.assertEqual([i["description"] for i in listed], ["second", "first"])
         self.assertEqual(listed[1], first)
         self.assertEqual(listed[0], {**second, "date": first["date"]})  # an item with no image takes the date before it, in the list only
-        self.assertEqual(set(listed[0]), {"key", "text", "description", "source", "image", "thumb", "width", "height", "date", "title", "preview"})
+        self.assertEqual(set(listed[0]), {"key", "text", "description", "source", "image", "thumb", "width", "height", "date", "title", "preview", "card"})
 
     def test_an_item_has_the_date_of_its_image_id_and_one_without_takes_the_one_before_it(self):
         text = NOTE + "![[2026-10-14-0900-aaaa.png]]\nfirst\n\nno image, no date of its own\n\n![[2026-10-15-1432-bbbb.png]]\nthird\n\nlast, no image\n"
@@ -578,3 +578,97 @@ class DeleteLookupTest(VaultCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PALETTE = {"kind": "colors", "title": "Primary", "colors": [{"hex": "#1a2b3c", "name": "Deep ink"}]}
+MISSION = {"kind": "text", "title": "Mission", "body": "To make it quiet."}
+
+
+class CardItemTest(VaultCase):
+    def test_a_card_is_appended_as_plain_text_and_shown_with_its_card(self):
+        before = self.moodboard_text()
+        item = items.add_card(self.vault, "alpha", PALETTE)
+        self.assertEqual(self.moodboard_text(), before + "**Primary**\n#1A2B3C Deep ink\n")
+        self.assertEqual(item["card"], {"kind": "colors", "title": "Primary", "colors": [{"hex": "#1A2B3C", "name": "Deep ink"}]})
+        self.assertEqual((item["image"], item["source"], item["title"]), (None, None, None))
+        self.assertEqual(items.brand_view(self.vault, "alpha")["moodboard"]["items"][0]["card"], item["card"])
+
+    def test_an_ordinary_item_has_no_card_and_neither_has_one_with_an_image_or_an_address(self):
+        text = "**Mission**\nwords"
+        self.assertIsNone(items.add_item(self.vault, "alpha", "plain", None, None)["card"])
+        by_hand = f"{NOTE}![[hand-made.png]]\n{text}\n\n{text}\n[source](https://example.com)\n\n{text}\n"
+        with open(os.path.join(self.vault, "Brands", "alpha", "alpha - Moodboard.md"), "w", encoding="utf-8", newline="") as f:
+            f.write(by_hand)
+        shown = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
+        self.assertEqual([i["card"] is not None for i in shown], [True, False, False])  # newest first: the bare one is a card, the other two are not
+
+    def test_a_bad_card_writes_nothing(self):
+        before = self.moodboard_text()
+        for card in ({"kind": "text"}, {"kind": "colors", "colors": []}, "x"):
+            with self.subTest(card=card), self.assertRaises(MoodboardError):
+                items.add_card(self.vault, "alpha", card)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_missing_moodboard_and_an_unknown_brand_are_refused(self):
+        self.make_brand("beta", moodboard=None)
+        with self.assertRaises(items.MissingMoodboard):
+            items.add_card(self.vault, "beta", MISSION)
+        with self.assertRaises(vault.BrandNotFound):
+            items.add_card(self.vault, "nobody", MISSION)
+
+
+class EditCardTest(VaultCase):
+    def setUp(self):
+        super().setUp()
+        items.add_item(self.vault, "alpha", "a thought", None, None)
+        self.card = items.add_card(self.vault, "alpha", PALETTE)
+        items.add_item(self.vault, "alpha", "last", None, None)
+
+    def test_the_card_is_replaced_in_place_and_the_rest_of_the_note_is_kept(self):
+        before = self.moodboard_text()
+        edited = items.edit_card(self.vault, "alpha", self.card["key"], {**PALETTE, "colors": [{"hex": "#000", "name": "Black"}, {"hex": "#fff"}]})
+        self.assertEqual(self.moodboard_text(), before.replace("#1A2B3C Deep ink", "#000 Black\n#FFF"))
+        self.assertEqual(edited["card"]["colors"], [{"hex": "#000", "name": "Black"}, {"hex": "#FFF", "name": ""}])
+        self.assertEqual(edited["key"], moodboard.parse(self.moodboard_text())[1].key)
+
+    def test_a_card_that_changed_since_it_was_shown_is_refused_and_nothing_is_written(self):
+        edited_by_hand = self.moodboard_text().replace("Deep ink", "Deeper ink")
+        with open(os.path.join(self.vault, "Brands", "alpha", "alpha - Moodboard.md"), "w", encoding="utf-8", newline="") as f:
+            f.write(edited_by_hand)
+        with self.assertRaises(moodboard.BlockNotFound):
+            items.edit_card(self.vault, "alpha", self.card["key"], PALETTE)
+        self.assertEqual(self.moodboard_text(), edited_by_hand)
+
+    def test_only_a_card_can_be_edited_never_an_item_or_a_block_with_an_image(self):
+        shown = items.brand_view(self.vault, "alpha")["moodboard"]["items"]
+        plain = next(i for i in shown if i["description"] == "last")
+        pictured = items.add_item(self.vault, "alpha", "pic", None, make_image())
+        before = self.moodboard_text()
+        for key in (plain["key"], pictured["key"]):
+            with self.subTest(key=key), self.assertRaises(items.ItemError):
+                items.edit_card(self.vault, "alpha", key, PALETTE)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_card_keeps_its_kind(self):
+        before = self.moodboard_text()
+        with self.assertRaises(items.ItemError):
+            items.edit_card(self.vault, "alpha", self.card["key"], MISSION)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_an_invalid_new_card_writes_nothing(self):
+        before = self.moodboard_text()
+        with self.assertRaises(MoodboardError):
+            items.edit_card(self.vault, "alpha", self.card["key"], {"kind": "colors", "colors": [{"hex": "red"}]})
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_key_that_matches_nothing_and_two_identical_cards_are_refused(self):
+        with self.assertRaises(moodboard.BlockNotFound):
+            items.edit_card(self.vault, "alpha", "0" * 64, PALETTE)
+        items.add_card(self.vault, "alpha", PALETTE)
+        with self.assertRaises(moodboard.AmbiguousBlock):
+            items.edit_card(self.vault, "alpha", self.card["key"], {**PALETTE, "title": "Other"})
+
+    def test_deleting_a_card_removes_only_its_block(self):
+        items.delete_item(self.vault, "alpha", self.card["key"])
+        self.assertNotIn("Deep ink", self.moodboard_text())
+        self.assertEqual(self.board_files(), [])
