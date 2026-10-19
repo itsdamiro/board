@@ -26,6 +26,15 @@ test("the three cards are added from the header menu, copied, edited in place an
   await dialog.getByLabel("Title (optional)").fill("Primary");
   await dialog.getByLabel("Colour 1 hex").fill("#1a2b3c");
   await dialog.getByLabel("Colour 1 name").fill("Deep ink");
+  // One line per colour: name, then hex, then the swatch (jsdom cannot see layout)
+  const box = async (label: string) => (await dialog.getByLabel(label, { exact: true }).boundingBox())!;
+  const name1 = await box("Colour 1 name");
+  const hex1 = await box("Colour 1 hex");
+  const swatch1 = await box("Colour 1");
+  expect(Math.abs(name1.y - hex1.y)).toBeLessThan(8);
+  expect(Math.abs(hex1.y - swatch1.y)).toBeLessThan(8);
+  expect(name1.x + name1.width).toBeLessThanOrEqual(hex1.x);
+  expect(hex1.x + hex1.width).toBeLessThanOrEqual(swatch1.x);
   await dialog.getByRole("button", { name: "Add colour" }).click();
   await dialog.getByLabel("Colour 2 hex").fill("#f5e9d3");
   await dialog.getByLabel("Colour 2 name").fill("Paper");

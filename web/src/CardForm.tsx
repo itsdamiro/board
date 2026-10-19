@@ -9,8 +9,7 @@ import { fullHex } from "./colors";
 // filled in, is the edit, and an edit keeps the card's kind.
 
 const MAX_COLORS = 12; // the server's limit, repeated here only to stop the Add colour button; the server decides
-const FIELD =
-  "w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11";
+const FIELD = "rounded-md border border-border bg-background px-2 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11";
 const ACTION =
   "rounded-md border border-border px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60 pointer-coarse:min-h-11";
 
@@ -43,27 +42,27 @@ function ColorRow({
 }) {
   const n = at + 1;
   return (
-    <li className="flex flex-wrap items-center gap-2">
+    <li className="flex items-center gap-2">
+      <input
+        aria-label={`Colour ${n} name`}
+        value={row.name}
+        onChange={(event) => onChange({ ...row, name: event.target.value })}
+        placeholder="Name (optional)"
+        className={`${FIELD} min-w-0 flex-1`}
+      />
+      <input
+        aria-label={`Colour ${n} hex`}
+        value={row.hex}
+        onChange={(event) => onChange({ ...row, hex: event.target.value })}
+        className={`${FIELD} w-24 shrink-0 font-mono`}
+        spellCheck={false}
+      />
       <input
         type="color"
         aria-label={`Colour ${n}`}
         value={fullHex(row.hex) ?? "#000000"}
         onChange={(event) => onChange({ ...row, hex: event.target.value })}
         className="size-9 shrink-0 cursor-pointer rounded-md border border-border bg-background p-0.5 pointer-coarse:size-11"
-      />
-      <input
-        aria-label={`Colour ${n} hex`}
-        value={row.hex}
-        onChange={(event) => onChange({ ...row, hex: event.target.value })}
-        className={`${FIELD} w-24 font-mono`}
-        spellCheck={false}
-      />
-      <input
-        aria-label={`Colour ${n} name`}
-        value={row.name}
-        onChange={(event) => onChange({ ...row, name: event.target.value })}
-        placeholder="Name (optional)"
-        className={FIELD}
       />
       <button
         type="button"
@@ -138,27 +137,27 @@ export default function CardForm({
           {what === "text" && (
             <>
               <Label text="Title">
-                <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Mission, Audience, Voice…" className={FIELD} />
+                <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Mission, Audience, Voice…" className={`${FIELD} w-full`} />
               </Label>
               <Label text="Words">
-                <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={5} className={FIELD} />
+                <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={5} className={`${FIELD} w-full`} />
               </Label>
             </>
           )}
           {what === "type" && (
             <>
               <Label text="Font name">
-                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Fauna One" className={FIELD} />
+                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Fauna One" className={`${FIELD} w-full`} />
               </Label>
               <Label text="Notes (optional)">
-                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} placeholder="Headings" className={FIELD} />
+                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} placeholder="Headings" className={`${FIELD} w-full`} />
               </Label>
             </>
           )}
           {what === "colors" && (
             <>
               <Label text="Title (optional)">
-                <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Primary" className={FIELD} />
+                <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Primary" className={`${FIELD} w-full`} />
               </Label>
               <ul aria-label="Colours" className="flex flex-col gap-2">
                 {rows.map((row, at) => (
