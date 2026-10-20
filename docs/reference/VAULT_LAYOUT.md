@@ -61,7 +61,7 @@ Font: Fauna One          type: "Font: " and a name (letters, digits, spaces, hyp
 Headings
 ```
 
-A block that fits none of these is an ordinary item. A hex line with other words (`#fff is too harsh`) is a palette of one colour named by the words. The editing of these blocks is the exception to "never edits a block": the pencil on a card replaces that block by a card of the same kind, only if the block's text is unchanged since the page showed it, and nothing else in the note changes (ADR 009, decision 4). Workflow ADR 018 still says the app never edits a block; it needs a matching amendment, which is not written yet.
+A block that fits none of these is an ordinary item. A hex line with other words (`#fff is too harsh`) is a palette of one colour named by the words. The editing of these blocks is the exception to "never edits a block": the pencil on a card replaces that block by a card of the same kind, only if the block's text is unchanged since the page showed it, and nothing else in the note changes (ADR 009, decision 4). Workflow ADR 018's amendment of 2026-10-20 records this exception.
 
 ## Address lookups
 
@@ -70,8 +70,8 @@ When you add an address with no picture, the app fetches that page once (unless 
 ## What the app may write
 
 - It appends a block at the end of a Moodboard note and writes files under `Board/<slug>/` (including `links/`). To delete a block it rewrites the note through a hidden temporary file (`.board-<random>.tmp`) in the same folder, renamed over the note, or removed if anything fails.
-- It never edits another note, and never edits a block except the one exception of ADR 009 below: the owner's click on the pencil of a special card. If you edit a block by hand, it is shown as it stands.
-- It moves a block: when you drag a card by its grip, or press the arrow keys on it, the app rewrites the note, by the same temporary file, with that one block just before another block or at the end. The block's own text is not changed, and neither is anything else in the note but the blank line at the two places. The page shows the note's blocks last to first, so the order of the grid is the order of the note, and a block you move by hand in Obsidian or Sympose moves in the grid too (ADR 001, amendment of 2026-10-20). Workflow ADR 018 still says the app only appends, edits a card and deletes; it needs a matching amendment, which is not written yet.
+- It never edits another note, and never edits a block except the one exception of ADR 009 above (the owner's click on the pencil of a special card), which workflow ADR 018's amendment of 2026-10-20 records. If you edit a block by hand, it is shown as it stands.
+- It moves a block: when you drag a card by its grip, or press the arrow keys on it, the app rewrites the note, by the same temporary file, with that one block just before another block or at the end. The block's own text is not changed, and neither is anything else in the note but the blank line at the two places. The page shows the note's blocks last to first, so the order of the grid is the order of the note, and a block you move by hand in Obsidian or Sympose moves in the grid too (ADR 001, amendment of 2026-10-20). Workflow ADR 018's amendment of 2026-10-20 records this too, and the numbering of identical blocks (`<hash>-<copy>`, ADR 001, amendment of 2026-10-20).
 - Deleting an item in the app removes its block and the image files its embed names, and nothing else. It does so only when you click delete on that block, and only if the block's text is unchanged since the page showed it. This applies to a block you wrote by hand as well, since the format has no marker for who wrote a block.
 - The description is the text you typed; the app writes no text of its own into a note.
 
