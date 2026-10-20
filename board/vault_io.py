@@ -71,6 +71,8 @@ def _rewrite(path: str, change, what: str):
     with _lock:
         raw, text = _read(path)
         new_text, block = change(text)
+        if new_text == text:  # nothing to change, so nothing is written
+            return block
         real = os.path.realpath(path)  # a symbolic link is replaced through, not by, the temporary file
         fd, temp = tempfile.mkstemp(dir=os.path.dirname(real), prefix=".board-", suffix=".tmp")
         try:
@@ -100,3 +102,9 @@ def replace_block(path: str, key: str, block: str, accept=lambda old: True) -> B
         accept(old)
         return new_text, old
     return _rewrite(path, change, "changed")
+
+
+def move_block(path: str, key: str, before: str | None) -> Block:
+    """Move the block with this key to just before the block with key `before`, or to the end if that is None (ADR 001, amendment of
+    2026-10-20), and return it. Nothing is written if it would stay where it is."""
+    return _rewrite(path, lambda text: moodboard.move(text, key, before), "moved")

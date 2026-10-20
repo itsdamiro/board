@@ -763,6 +763,65 @@ class LookupRouteTest(ServerCase):
         self.assertEqual((status, body), (200, {"deleted": item["key"], "warning": items.FILES_LEFT}))
 
 
+class MoveRouteTest(ServerCase):
+    def setUp(self):
+        super().setUp()
+        self.keys = [self.add(word)[1]["key"] for word in ("one", "two", "three")]  # in the note's order; the grid shows them last to first
+
+    def move(self, key, body, slug="alpha"):
+        return self.json("POST", f"/api/brands/{slug}/items/{key}/move", body)
+
+    def shown(self):
+        return [i["description"] for i in self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"]]
+
+    def test_an_item_is_moved_before_another_200_and_the_grid_follows(self):
+        self.assertEqual(self.shown(), ["three", "two", "one"])
+        self.assertEqual(self.move(self.keys[2], {"before": self.keys[0]}), (200, {"moved": self.keys[2]}))
+        self.assertEqual(self.shown(), ["two", "one", "three"])
+
+    def test_null_moves_it_to_the_end_of_the_note_which_is_the_top_of_the_grid(self):
+        self.assertEqual(self.move(self.keys[0], {"before": None})[0], 200)
+        self.assertEqual(self.shown(), ["one", "three", "two"])
+
+    def test_a_move_that_changes_nothing_is_200_and_writes_nothing(self):
+        before = self.moodboard_text()
+        self.assertEqual(self.move(self.keys[2], {"before": None})[0], 200)
+        self.assertEqual(self.move(self.keys[0], {"before": self.keys[1]})[0], 200)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_move_is_refused_by_status_and_writes_nothing(self):
+        before = self.moodboard_text()
+        for status, target, body in ((409, "f" * 64, {"before": None}),  # no block has this key
+                                     (409, self.keys[0], {"before": "f" * 64}),
+                                     (422, self.keys[0], {"before": self.keys[0]}),  # before itself
+                                     (400, self.keys[0], {}), (400, self.keys[0], {"before": 3}), (400, self.keys[0], {"before": "short"}),
+                                     (400, self.keys[0], {"before": None, "after": None}), (400, self.keys[0], {"after": self.keys[1]}),
+                                     (404, "short", {"before": None})):
+            with self.subTest(target=target[:6], body=body):
+                self.assertEqual(self.move(target, body)[0], status)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_an_item_that_changed_since_it_was_shown_is_409(self):
+        edited = self.moodboard_text().replace("two", "two, edited")
+        with open(os.path.join(self.vault, "Brands", "alpha", "alpha - Moodboard.md"), "w", encoding="utf-8", newline="") as f:
+            f.write(edited)
+        self.assertEqual(self.move(self.keys[1], {"before": None})[0], 409)
+        self.assertEqual(self.move(self.keys[0], {"before": self.keys[1]})[0], 409)
+        self.assertEqual(self.moodboard_text(), edited)
+
+    def test_a_move_needs_the_origin_and_json_like_every_change(self):
+        path = f"/api/brands/alpha/items/{self.keys[0]}/move"
+        self.assertEqual(self.json("POST", path, {"before": None}, origin=None)[0], 403)
+        self.assertEqual(self.json("POST", path, {"before": None}, origin="http://evil.test")[0], 403)
+        self.assertEqual(self.call("POST", path, raw=b"x", headers={"Content-Type": "text/plain"})[0], 415)
+        self.assertEqual(self.call("GET", path)[0], 404)  # a move is never a GET
+
+    def test_a_move_in_a_brand_with_no_moodboard_is_409_and_in_no_brand_404(self):
+        self.make_brand("beta", moodboard=None)
+        self.assertEqual(self.move("a" * 64, {"before": None}, "beta")[0], 409)
+        self.assertEqual(self.move("a" * 64, {"before": None}, "nobody")[0], 404)
+
+
 if __name__ == "__main__":
     unittest.main()
 

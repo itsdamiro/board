@@ -74,7 +74,7 @@ export function installServer(brands: Brand[], refuse?: { status: number; error:
     const body = typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : null;
     calls.push({ method, path, body });
     if (method === "GET" && path === "/api/brands") return json(200, { brands: brands.map((b) => b.slug).sort() });
-    const found = /^\/api\/brands\/([^/]+)(\/items)?(?:\/([^/]+))?(\/lookup)?$/.exec(path);
+    const found = /^\/api\/brands\/([^/]+)(\/items)?(?:\/([^/]+))?(\/lookup|\/move)?$/.exec(path);
     const brand = brands.find((b) => b.slug === decodeURIComponent(found?.[1] ?? ""));
     if (found === null || brand === undefined) return json(404, { error: "no such brand" });
     if (method === "PUT" && found[2] !== undefined && found[3] !== undefined && found[4] === undefined) {
@@ -93,7 +93,20 @@ export function installServer(brands: Brand[], refuse?: { status: number; error:
       brand.moodboard.items.splice(at, 1);
       return json(200, { deleted: key });
     }
-    if (method === "POST" && found[4] !== undefined && found[3] !== undefined) {
+    if (method === "POST" && found[4] === "/move" && found[3] !== undefined) {
+      if (refuse !== undefined) return json(refuse.status, { error: refuse.error });
+      const key = decodeURIComponent(found[3]);
+      const before = (body as { before: string | null }).before;
+      const list = brand.moodboard.items;
+      const at = list.findIndex((i) => i.key === key);
+      const anchor = before === null ? -1 : list.findIndex((i) => i.key === before);
+      if (at < 0 || (before !== null && anchor < 0)) return json(409, { error: "the item changed since it was shown" });
+      const [moved] = list.splice(at, 1);
+      // the list is the note's order reversed, and a block goes before another in the note: so after it in the list, or first for the end
+      list.splice(before === null ? 0 : list.findIndex((i) => i.key === before) + 1, 0, moved as Item);
+      return json(200, { moved: key });
+    }
+    if (method === "POST" && found[4] === "/lookup" && found[3] !== undefined) {
       await lookup.gate;
       const target = brand.moodboard.items.find((i) => i.key === decodeURIComponent(found[3] ?? ""));
       if (target === undefined) return json(409, { error: "the item changed since it was shown" });

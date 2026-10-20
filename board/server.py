@@ -11,6 +11,7 @@ Routes (all under /api; errors are `{"error": "<plain text>"}`):
   GET    /api/brands/<slug>/links/<hash>-<version>.<ext> the thumbnail of an address's preview (ADR 008)
   POST   /api/brands/<slug>/items             {"description", "source", "image"(base64)} -> the new item, 201
   POST   /api/brands/<slug>/items/<key>/lookup  looks the item's address up (up to 8 s) -> the item, 200
+  POST   /api/brands/<slug>/items/<key>/move  {"before": <key> | null} moves the item just before that one in the note, or to its end
   DELETE /api/brands/<slug>/items/<key>       removes the item whose key the brand view gave
 
 Everything else that is read (GET, HEAD) is the built page, `web/dist/`: `/` is its index.html, other addresses are its files.
@@ -54,6 +55,7 @@ ROUTES = [
     ("GET", re.compile(rf"/api/brands/{_BRAND}/{_LINK}"), "link"),
     ("POST", re.compile(rf"/api/brands/{_BRAND}/items"), "add"),
     ("POST", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}/lookup"), "lookup"),
+    ("POST", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}/move"), "move"),
     ("PUT", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}"), "edit"),
     ("DELETE", re.compile(rf"/api/brands/{_BRAND}/items/{_KEY}"), "delete"),
     ("GET", re.compile(r"/(?!api/)(?P<name>.*)"), "page"),  # last, and never under /api: an unknown API address stays a JSON 404
@@ -226,6 +228,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _route_lookup(self, slug: str, key: str) -> None:
         self._json(HTTPStatus.OK, items.look_up_item(self.server.vault, slug, key))
+
+    def _route_move(self, slug: str, key: str) -> None:
+        data = self._body()
+        before = data.get("before")
+        if set(data) != {"before"} or not (before is None or (isinstance(before, str) and re.fullmatch(_KEY, before))):
+            raise Failure(HTTPStatus.BAD_REQUEST, "a move is {\"before\": <the key of the item it goes before, or null for the end>}")
+        items.move_item(self.server.vault, slug, key, before)
+        self._json(HTTPStatus.OK, {"moved": key})
 
     def _route_delete(self, slug: str, key: str) -> None:
         warning = items.delete_item(self.server.vault, slug, key)

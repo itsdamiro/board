@@ -83,6 +83,11 @@
 - **Cause:** the clipboard call needs the browser's permission, and `copyText` (`web/src/copy.ts`) falls back to a selected, off-screen field and `execCommand("copy")`, which those browsers allow after a click; only if both fail does the card say so. The server's page route serves only the file types in `PAGE_TYPES` (`board/server.py`): `.html`, `.js`, `.css`, `.svg`, `.woff`, `.woff2`.
 - **Do this:** for the first, try the click in a normal browser window before suspecting the code; for the second, add the type to `PAGE_TYPES` with a test in `PageTest` and a line in the record that says why (ADR 002, amendment of 2026-10-20).
 
+### A test of a drag finds the card always dropped on its lower half, or the page throws on `types`
+- **Symptom:** a drop test of the page always lands "below" a card whatever `clientY` it was given; or an uncaught `Cannot read properties of undefined (reading 'includes')` from `App.tsx` or `Composer.tsx` while a test fires a drag event.
+- **Cause:** jsdom has no `DragEvent`, so Testing Library builds a plain `Event` and drops every init field but `dataTransfer`: `clientY` is `undefined`, and a card with the pointer not in its upper half is "below". The page's own `dragover` and `drop` listeners read `dataTransfer.types`, so a fake `dataTransfer` without a `types` list throws.
+- **Do this:** build the event with `createEvent` and put the position on with `Object.defineProperty`, and give the fake `dataTransfer` `types` (the drag from a grip carries one custom type and no `Files`); `web/src/moveCards.test.tsx` has both. jsdom also lays nothing out, so a test gives the card's `getBoundingClientRect` itself, and what a real drag does is left to `web/e2e/reorder.spec.ts`.
+
 ## 2. Recipes
 
 None yet.

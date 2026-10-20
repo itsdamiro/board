@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { addItem, ApiError, getBrand, listBrands, toBase64 } from "./api";
-import { installServer, brandView, png } from "./fakeServer";
+import { addItem, ApiError, getBrand, listBrands, moveItem, toBase64 } from "./api";
+import { installServer, brandView, item, png } from "./fakeServer";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -57,5 +57,20 @@ describe("the API client", () => {
 
   it("encodes the bytes of a file", async () => {
     expect(await toBase64(new Blob([new Uint8Array([1, 2, 3])]))).toBe("AQID");
+  });
+
+  it("moves an item by its key, with the key it goes before or null for the end of the note", async () => {
+    const { calls } = installServer([brandView("a", {}, [item({ key: "x" }), item({ key: "y" })])]);
+    await moveItem("a", "y", "x");
+    await moveItem("a", "x", null);
+    expect(calls.map((c) => [c.method, c.path, c.body])).toEqual([
+      ["POST", "/api/brands/a/items/y/move", { before: "x" }],
+      ["POST", "/api/brands/a/items/x/move", { before: null }],
+    ]);
+  });
+
+  it("shows the server's own words when a move is refused", async () => {
+    installServer([brandView("a", {}, [item({ key: "x" })])], { status: 409, error: "no block has this text now" });
+    await expect(moveItem("a", "x", null)).rejects.toThrow(new ApiError("no block has this text now"));
   });
 });

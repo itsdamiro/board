@@ -185,6 +185,47 @@ class VaultIoTest(unittest.TestCase):
         self.assertEqual((self.read(), self.leftovers()), (before, []))
 
 
+class MoveBlockTest(VaultIoTest):
+    def test_the_block_moves_and_nothing_else_changes(self):
+        key = self.key_of("second")
+        block = vault_io.move_block(self.path, key, vault_io.read_blocks(self.path)[0].key)
+        self.assertEqual(block.description, "second")
+        self.assertEqual(self.read().decode(), f"---\ntype: moodboard\n---\n\nsecond\n\n![[{ID}.png]]\nfirst\n")
+        self.assertEqual(self.leftovers(), [])
+
+    def test_the_block_moves_to_the_end_with_none(self):
+        vault_io.move_block(self.path, self.key_of("first"), None)
+        self.assertEqual(self.read().decode(), f"---\ntype: moodboard\n---\n\nsecond\n\n![[{ID}.png]]\nfirst\n")
+
+    def test_a_move_that_changes_nothing_writes_nothing(self):
+        before = os.stat(self.path).st_mtime_ns
+        vault_io.move_block(self.path, self.key_of("second"), None)
+        self.assertEqual(os.stat(self.path).st_mtime_ns, before)
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_block_that_changed_is_refused(self):
+        key = self.key_of("second")
+        self.write("note.md", NOTE.replace("second", "edited").encode())
+        with self.assertRaises(moodboard.BlockNotFound):
+            vault_io.move_block(self.path, key, None)
+
+    def test_a_note_that_changes_while_it_is_written_is_refused_and_untouched(self):
+        key = self.key_of("first")
+        real = vault_io._read
+        calls = []
+
+        def read(path):
+            calls.append(path)
+            if len(calls) == 2:  # the check after the temporary file is written
+                self.write("note.md", NOTE.replace("second", "edited").encode())
+            return real(path)
+
+        with mock.patch.object(vault_io, "_read", read), self.assertRaisesRegex(vault_io.NoteChanged, "nothing was moved, try again"):
+            vault_io.move_block(self.path, key, None)
+        self.assertIn("edited", self.read().decode())
+        self.assertEqual(self.leftovers(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
 

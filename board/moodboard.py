@@ -8,6 +8,7 @@ What it promises, each with a test:
 - append only adds text after the existing text, never changes what is already there;
 - remove deletes the lines of one block, plus at most one blank line, and nothing else;
 - replace swaps the lines of one block for the lines of another and changes nothing else (ADR 009, the card's edit);
+- move puts one block's lines just before another block's, or at the end, and changes no byte of any block (ADR 001, amendment of 2026-10-20);
 - a block is found by the hash of its exact text, so a block edited since it was shown is refused;
 - a text it cannot place safely (frontmatter never closed) is refused, not guessed at.
 A heading block and the frontmatter are not items; a heading block is a first line starting with `#` and every line under
@@ -168,7 +169,10 @@ def remove(text: str, key: str) -> tuple[str, Block]:
     lines = text.split("\n")
     del lines[block.start:block.end]
     if block.start < len(lines) and (block.start == 0 or _blank(lines[block.start - 1])):  # the line now at `start` is blank
-        del lines[block.start]
+        # At the end of the note that line is only the empty piece after the last line ending; the blank line before it is the one to drop,
+        # or a note with Windows line endings would end in a lone carriage return.
+        at_end = 0 < block.start == len(lines) - 1 and lines[block.start] == ""
+        del lines[block.start - 1 if at_end else block.start]
     return "\n".join(lines), block
 
 
@@ -190,3 +194,44 @@ def replace(text: str, key: str, block: str) -> tuple[str, Block]:
     cr = "\r" if lines[old.start].endswith("\r") else ""
     lines[old.start:old.end] = [line + cr for line in block.split("\n")]
     return "\n".join(lines), old
+
+
+def move(text: str, key: str, before: str | None) -> tuple[str, Block]:
+    """`text` with the one block whose key this is moved to just before the block whose key is `before`, or to the end if `before` is None;
+    and the block. The block's own lines are kept byte for byte (including their line endings), and so is everything else but the blank
+    lines at the two places. A move that leaves the order as it is returns `text` itself.
+
+    Raises BlockNotFound or AmbiguousBlock for either key, and MoodboardError for a block moved before itself.
+    """
+    blocks = parse(text)
+
+    def find(wanted: str) -> int:
+        found = [i for i, b in enumerate(blocks) if b.key == wanted]
+        if not found:
+            raise BlockNotFound(NOT_FOUND)
+        if len(found) > 1:
+            raise AmbiguousBlock(f"{len(found)} blocks have exactly this text; remove the extra copies by hand first")
+        return found[0]
+
+    at = find(key)
+    anchor = None if before is None else find(before)
+    if anchor == at:
+        raise MoodboardError("a block cannot be moved before itself")
+    block = blocks[at]
+    if (blocks[at + 1] if at + 1 < len(blocks) else None) is (None if anchor is None else blocks[anchor]):
+        return text, block  # already there
+    lines = text.split("\n")
+    moved = lines[block.start:block.end]
+    cr = "\r" if moved[0].endswith("\r") else ""  # the blank lines we add use the block's own line ending
+    rest = remove(text, key)[0].split("\n")
+    if anchor is None:
+        if rest[-1] != "":  # the note did not end with a line ending: it does now, as an append makes it
+            rest.append("")
+        body = rest[:-1]
+        if body and not _blank(body[-1]):
+            body.append(cr)
+        rest = body + moved + [""]
+    else:
+        target = next(b for b in parse("\n".join(rest)) if b.key == blocks[anchor].key)
+        rest[target.start:target.start] = moved + [cr]
+    return "\n".join(rest), block

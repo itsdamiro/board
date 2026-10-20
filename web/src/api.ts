@@ -153,3 +153,12 @@ export async function editCard(slug: string, key: string, card: CardInput): Prom
   const init = { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ card }) };
   return (await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}`, init)) as Item;
 }
+
+/**
+ * Moves the item whose `key` the brand view gave to just before the item with key `before` in the Moodboard note, or to the end of
+ * the note when `before` is null (ADR 001, amendment of 2026-10-20). The server refuses it (409) if either block changed since it was shown.
+ */
+export async function moveItem(slug: string, key: string, before: string | null): Promise<void> {
+  const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ before }) };
+  await call(`/api/brands/${encodeURIComponent(slug)}/items/${encodeURIComponent(key)}/move`, init);
+}

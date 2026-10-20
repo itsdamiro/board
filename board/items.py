@@ -175,6 +175,12 @@ def _keep(vault_path: str, slug: str, address: str, found: lookup.Found) -> None
         log.warning("keeping an address lookup failed: %s", type(err).__name__)
 
 
+def move_item(vault_path: str, slug: str, key: str, before: str | None) -> None:
+    """Move the block with this key (unchanged since shown) to just before the block with key `before`, or to the end of the note if
+    that is None (ADR 001, amendment of 2026-10-20). The note's order is the one source of the grid's order; only the block's place changes."""
+    vault_io.move_block(_existing_moodboard(vault_path, slug), key, before)
+
+
 FILES_LEFT = "the item was removed from the note but its image files could not be removed"
 
 

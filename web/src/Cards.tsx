@@ -1,20 +1,23 @@
 import { Check } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { itemCards, type Card, type PlacedItem } from "./cardOrder";
 import type { Columns } from "./useColumns";
 import { ConfirmDelete, DeleteButton } from "./DeleteItem";
 import { keyIsTaken } from "./keys";
 import CardForm from "./CardForm";
 import EditButton from "./EditButton";
+import GripButton from "./GripButton";
+import { moveRequest, stepRequest, type MoveRequest, type Side } from "./reorder";
 import SpecialBody from "./SpecialCards";
 import Viewer from "./Viewer";
-import { itemWords, type Brand, type Item, type Panel } from "./api";
+import { itemWords, moveItem, type Brand, type Item, type Panel } from "./api";
 
 // The brand as cards in columns, as many as the stage's width has room for, each card keeping its own proportions
 // (ADR 001, decision 4; ADR 002, amendment on the cards). Every text on a card is shown as text (ADR 002, decision 7);
 // an address is a link only because the server wrote it as one.
 
 const LINK = "focus-visible:outline-2 focus-visible:outline-ring";
+const DRAG_TYPE = "application/x-board-card"; // not text/plain, so a card dropped on a text box does not paste anything
 
 function ItemCard({ item, pending, onView }: { item: Item; pending: boolean; onView: (opener: HTMLElement) => void }) {
   if (item.card !== null) return <SpecialBody card={item.card} />; // ADR 009: a colours, text or type card
@@ -171,7 +174,14 @@ export default function Cards({
     return () => document.removeEventListener("keydown", leave);
   }, [selecting, finish]);
   const opener = useRef<HTMLElement | null>(null);
+  // The drag that moves a card (ADR 001, amendment of 2026-10-20): the card being dragged, and the card and half it would be dropped on.
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<{ key: string; side: Side } | null>(null);
+  const [moveProblem, setMoveProblem] = useState<string | null>(null);
+  const moving = useRef(false); // a write at a time: two moves of one note at once would only meet the server's 409
+  const dimming = useRef(0);
   const { watchStage, count } = columns;
+
   const viewed = gallery.findIndex((entry) => entry.key === viewing);
 
   // A click on an item card with Shift held, or in the select mode, picks it instead of doing what the click would; the first pick
@@ -201,9 +211,63 @@ export default function Cards({
     onChanged();
   }
 
+  async function move(key: string, request: MoveRequest) {
+    const entry = placed.find((one) => one.key === key);
+    if (entry === undefined || moving.current) return;
+    moving.current = true;
+    setMoveProblem(null);
+    try {
+      await moveItem(slug, entry.item.key, request.before);
+    } catch (failure) {
+      setMoveProblem(failure instanceof Error ? failure.message : "Something went wrong.");
+    } finally {
+      moving.current = false;
+      onChanged(); // whatever the answer was, the page asks the server again
+    }
+  }
+
+  function endDrag() {
+    window.clearTimeout(dimming.current);
+    setDragging(null);
+    setDropAt(null);
+  }
+
+  // The half of the card the pointer is in. Over the card itself, a hub or a note, or a card that is not an item, nothing is let drop.
+  function overCard(card: Card, event: DragEvent<HTMLLIElement>) {
+    if (dragging === null) return;
+    if (card.kind !== "item" || card.key === dragging) {
+      setDropAt(null);
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const box = event.currentTarget.getBoundingClientRect();
+    const side: Side = event.clientY < box.top + box.height / 2 ? "above" : "below";
+    setDropAt((now) => (now?.key === card.key && now.side === side ? now : { key: card.key, side }));
+  }
+
+  function dropOn(card: Card, event: DragEvent<HTMLLIElement>) {
+    if (dragging === null || card.kind !== "item") return;
+    event.preventDefault();
+    const box = event.currentTarget.getBoundingClientRect();
+    const request = moveRequest(placed, dragging, card.key, event.clientY < box.top + box.height / 2 ? "above" : "below");
+    endDrag();
+    if (request !== null) void move(dragging, request);
+  }
+
+  // The card's side of the drag, spread on the card like `pickable`: the card takes a drop, it is not itself a control.
+  function dropTarget(card: Card) {
+    return { onDragOver: (event: DragEvent<HTMLLIElement>) => overCard(card, event), onDrop: (event: DragEvent<HTMLLIElement>) => dropOn(card, event) };
+  }
+
   if (cards.length === 0 && adder === undefined) return null;
   return (
     <>
+      {moveProblem !== null && (
+        <p role="alert" className="mb-4 text-sm text-destructive">
+          {moveProblem}
+        </p>
+      )}
       <ul ref={watchStage} aria-label="Cards" className="gap-4" style={{ columns: count }}>
         {adder !== undefined && <li className="mb-4 break-inside-avoid rounded-lg border-2 border-dashed border-border text-card-foreground">{adder}</li>}
         {cards.map((card) => {
@@ -212,8 +276,15 @@ export default function Cards({
             <li
               key={card.key}
               {...(card.kind === "item" ? pickable(card.key) : {})}
-              className={`group relative mb-4 break-inside-avoid overflow-hidden rounded-lg border bg-card text-card-foreground ${isPicked ? "border-ring ring-2 ring-ring" : "border-border"} ${selecting ? "select-none" : ""}`}
+              {...dropTarget(card)}
+              className={`group relative mb-4 break-inside-avoid overflow-hidden rounded-lg border bg-card text-card-foreground ${isPicked ? "border-ring ring-2 ring-ring" : "border-border"} ${selecting ? "select-none" : ""} ${dragging === card.key ? "opacity-50" : ""}`}
             >
+              {dropAt?.key === card.key && (
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute inset-x-0 z-20 h-1 bg-ring ${dropAt.side === "above" ? "top-0" : "bottom-0"}`}
+                />
+              )}
               <Body
                 card={card}
                 pending={pending}
@@ -223,6 +294,24 @@ export default function Cards({
                 }}
               />
               {card.kind === "item" && selecting && <PickBox item={card.item} picked={isPicked} />}
+              {card.kind === "item" && !selecting && (
+                <GripButton
+                  label={itemWords(card.item)}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData(DRAG_TYPE, card.key);
+                    const own = event.currentTarget.closest("li");
+                    if (own !== null) event.dataTransfer.setDragImage(own, 16, 16);
+                    // dimmed a moment later, so the picture the browser takes of the card is not the dimmed one
+                    dimming.current = window.setTimeout(() => setDragging(card.key), 0);
+                  }}
+                  onDragEnd={endDrag}
+                  onStep={(direction) => {
+                    const request = stepRequest(placed, card.key, direction);
+                    if (request !== null) void move(card.key, request);
+                  }}
+                />
+              )}
               {card.kind === "item" && !selecting && card.item.card !== null && (
                 <EditButton label={itemWords(card.item)} onAsk={() => setEditing({ key: card.key, item: card.item })} />
               )}

@@ -256,6 +256,11 @@ class RemoveTest(unittest.TestCase):
         out, _ = self.remove(text, 1)
         self.assertEqual(out, f"{FM}\n{self.A}\n\n{self.C}\n".replace("\n", "\r\n"))
 
+    def test_the_last_block_of_a_note_with_windows_line_endings_leaves_no_lone_carriage_return(self):
+        text = self.three().replace("\n", "\r\n")
+        self.assertEqual(self.remove(text, 2)[0], f"{FM}\n{self.A}\n\n{self.B}\n".replace("\n", "\r\n"))
+        self.assertEqual(self.remove(self.three(), 2)[0], f"{FM}\n{self.A}\n\n{self.B}\n")
+
     def test_a_block_changed_since_it_was_shown_is_refused(self):
         shown = m.parse(self.three())[1].key
         with self.assertRaises(m.BlockNotFound):
@@ -271,6 +276,87 @@ class RemoveTest(unittest.TestCase):
     def test_frontmatter_that_never_closes_is_refused(self):
         with self.assertRaises(m.MoodboardError):
             m.remove("---\nx\n" + self.B + "\n", "0" * 64)
+
+
+class MoveTest(unittest.TestCase):
+    A, B, C = FULL, BARE, "third"
+
+    def three(self, tail="\n"):
+        return f"{FM}\n{self.A}\n\n{self.B}\n\n{self.C}{tail}"
+
+    def move(self, text, index, before):
+        blocks = m.parse(text)
+        return m.move(text, blocks[index].key, None if before is None else blocks[before].key)
+
+    def test_a_block_goes_before_another_and_the_rest_is_kept_byte_for_byte(self):
+        self.assertEqual(self.move(self.three(), 2, 0)[0], f"{FM}\n{self.C}\n\n{self.A}\n\n{self.B}\n")
+        self.assertEqual(self.move(self.three(), 2, 1)[0], f"{FM}\n{self.A}\n\n{self.C}\n\n{self.B}\n")
+        self.assertEqual(self.move(self.three(), 0, 2)[0], f"{FM}\n{self.B}\n\n{self.A}\n\n{self.C}\n")
+
+    def test_a_block_goes_to_the_end_with_none(self):
+        self.assertEqual(self.move(self.three(), 0, None)[0], f"{FM}\n{self.B}\n\n{self.C}\n\n{self.A}\n")
+        self.assertEqual(self.move(self.three(), 1, None)[0], f"{FM}\n{self.A}\n\n{self.C}\n\n{self.B}\n")
+
+    def test_a_note_that_does_not_end_with_a_line_ending_gets_one(self):
+        self.assertEqual(self.move(self.three(""), 0, None)[0], f"{FM}\n{self.B}\n\n{self.C}\n\n{self.A}\n")
+        self.assertEqual(self.move(self.three(""), 2, 0)[0], f"{FM}\n{self.C}\n\n{self.A}\n\n{self.B}\n")
+
+    def test_the_moved_block_is_returned_and_keeps_its_key(self):
+        text = self.three()
+        out, block = self.move(text, 0, None)
+        self.assertEqual(block, m.parse(text)[0])
+        self.assertEqual(keys(out), [m.parse(text)[i].key for i in (1, 2, 0)])
+
+    def test_a_move_that_changes_nothing_returns_the_text_itself(self):
+        text = self.three()
+        self.assertIs(self.move(text, 0, 1)[0], text)  # before the next one
+        self.assertIs(self.move(text, 2, None)[0], text)  # the last one to the end
+        odd = f"{FM}\n{self.A}\n\n\n\n{self.B}\n"  # spacing that a real move would tidy is left alone when there is nothing to move
+        self.assertIs(self.move(odd, 0, 1)[0], odd)
+
+    def test_a_note_with_windows_line_endings_keeps_them_and_the_block_keeps_its_own(self):
+        text = self.three().replace("\n", "\r\n")
+        self.assertEqual(self.move(text, 2, 0)[0], f"{FM}\n{self.C}\n\n{self.A}\n\n{self.B}\n".replace("\n", "\r\n"))
+        self.assertEqual(self.move(text, 0, None)[0], f"{FM}\n{self.B}\n\n{self.C}\n\n{self.A}\n".replace("\n", "\r\n"))
+        mixed = f"{FM}\n{self.A}\n\n{self.B}\r\n\r\n{self.C}\n"  # only the middle block uses them
+        self.assertEqual(self.move(mixed, 1, 0)[0], f"{FM}\n{self.B}\r\n\r\n{self.A}\n\n{self.C}\n")
+
+    def test_a_heading_block_the_frontmatter_and_text_between_blocks_stay_where_they_are(self):
+        text = f"{FM}\n# Notes\nunder it\n\n{self.A}\n\n{self.B}\n\n{self.C}\n"
+        self.assertEqual(self.move(text, 2, 0)[0], f"{FM}\n# Notes\nunder it\n\n{self.C}\n\n{self.A}\n\n{self.B}\n")
+        self.assertEqual(self.move(text, 0, None)[0], f"{FM}\n# Notes\nunder it\n\n{self.B}\n\n{self.C}\n\n{self.A}\n")
+
+    def test_a_note_with_no_frontmatter_works_too(self):
+        text = f"{self.A}\n\n{self.B}\n"
+        self.assertEqual(self.move(text, 1, 0)[0], f"{self.B}\n\n{self.A}\n")
+
+    def test_a_block_that_changed_or_is_not_there_is_refused_for_either_key(self):
+        text = self.three()
+        shown = keys(text)
+        edited = text.replace(self.B, self.B + " edited")
+        with self.assertRaises(m.BlockNotFound):
+            m.move(edited, shown[1], shown[0])
+        with self.assertRaises(m.BlockNotFound):
+            m.move(edited, shown[0], shown[1])
+        with self.assertRaises(m.BlockNotFound):
+            m.move(text, "0" * 64, None)
+
+    def test_two_identical_blocks_are_not_guessed_between(self):
+        text = f"{FM}\n{self.B}\n\n{self.B}\n\n{self.C}\n"
+        same, last = keys(text)[0], keys(text)[2]
+        with self.assertRaises(m.AmbiguousBlock):
+            m.move(text, same, None)
+        with self.assertRaises(m.AmbiguousBlock):
+            m.move(text, last, same)
+
+    def test_a_block_cannot_go_before_itself(self):
+        text = self.three()
+        with self.assertRaises(m.MoodboardError):
+            m.move(text, keys(text)[1], keys(text)[1])
+
+    def test_a_note_whose_frontmatter_never_closes_is_refused(self):
+        with self.assertRaises(m.MoodboardError):
+            m.move("---\na\n\nb\n", "0" * 64, None)
 
 
 if __name__ == "__main__":

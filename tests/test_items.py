@@ -672,3 +672,46 @@ class EditCardTest(VaultCase):
         items.delete_item(self.vault, "alpha", self.card["key"])
         self.assertNotIn("Deep ink", self.moodboard_text())
         self.assertEqual(self.board_files(), [])
+
+
+class MoveItemTest(VaultCase):
+    def setUp(self):
+        super().setUp()
+        self.one = items.add_item(self.vault, "alpha", "one", None, make_image("jpg"))
+        self.two = items.add_card(self.vault, "alpha", PALETTE)
+        self.three = items.add_item(self.vault, "alpha", "three", "https://example.com", None)
+
+    def shown(self):
+        return [i["key"] for i in items.brand_view(self.vault, "alpha")["moodboard"]["items"]]
+
+    def test_the_grid_follows_the_note_so_a_move_reorders_what_is_shown(self):
+        self.assertEqual(self.shown(), [self.three["key"], self.two["key"], self.one["key"]])  # newest first: the note's order, reversed
+        items.move_item(self.vault, "alpha", self.three["key"], self.one["key"])  # to the front of the note, so the last in the grid
+        self.assertEqual(self.shown(), [self.two["key"], self.one["key"], self.three["key"]])
+        items.move_item(self.vault, "alpha", self.three["key"], None)
+        self.assertEqual(self.shown(), [self.three["key"], self.two["key"], self.one["key"]])
+
+    def test_only_the_place_changes_the_note_keeps_every_block_and_no_file_is_touched(self):
+        files = self.board_files()
+        before = self.moodboard_text()
+        items.move_item(self.vault, "alpha", self.one["key"], None)
+        after = self.moodboard_text()
+        self.assertNotEqual(after, before)
+        self.assertEqual(len(after), len(before))
+        self.assertEqual(sorted(b.key for b in moodboard.parse(after)), sorted(b.key for b in moodboard.parse(before)))
+        self.assertEqual(self.board_files(), files)
+
+    def test_a_block_that_changed_since_it_was_shown_is_refused_and_nothing_is_written(self):
+        edited = self.moodboard_text().replace("three", "three, edited")
+        with open(os.path.join(self.vault, "Brands", "alpha", "alpha - Moodboard.md"), "w", encoding="utf-8", newline="") as f:
+            f.write(edited)
+        with self.assertRaises(moodboard.BlockNotFound):
+            items.move_item(self.vault, "alpha", self.three["key"], None)
+        with self.assertRaises(moodboard.BlockNotFound):
+            items.move_item(self.vault, "alpha", self.one["key"], self.three["key"])
+        self.assertEqual(self.moodboard_text(), edited)
+
+    def test_a_brand_with_no_moodboard_is_refused(self):
+        self.make_brand("beta", moodboard=None)
+        with self.assertRaises(items.MissingMoodboard):
+            items.move_item(self.vault, "beta", "a" * 64, None)
