@@ -46,9 +46,9 @@ describe("orderCards", () => {
     expect(orderCards(brand)).toEqual([]);
   });
 
-  it("shows the hub card for a hub that could not be read, and numbers repeated item keys", () => {
-    const brand = brandView("a", { hub_problem: "a link" }, [item({ key: "same" }), item({ key: "same" })]);
+  it("shows the hub card for a hub that could not be read, and gives each item card its own key with a prefix", () => {
+    const brand = brandView("a", { hub_problem: "a link" }, [item({ key: "hash-1" }), item({ key: "hash-0" })]);
     const cards = orderCards(brand);
-    expect(cards.map((c) => c.key)).toEqual(["hub", "item-same", "item-same-1"]);
+    expect(cards.map((c) => c.key)).toEqual(["hub", "item-hash-1", "item-hash-0"]);
   });
 });

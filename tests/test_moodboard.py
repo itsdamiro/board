@@ -398,3 +398,60 @@ class ReplaceTest(unittest.TestCase):
         for block in ("a\n\nb", "a\r\nb", "", "a\n \nb"):
             with self.subTest(block=block), self.assertRaises(m.MoodboardError):
                 self.replace(self.three(), 1, block)
+
+
+class CopyKeyTest(unittest.TestCase):
+    """A text that two blocks share is told apart by a copy number after the hash (ADR 001, amendment of 2026-10-20)."""
+
+    A, B = "twin", "other"
+
+    def note(self):
+        return f"{FM}\n{self.A}\n\n{self.B}\n\n{self.A}\n\n{self.A}\n"
+
+    def test_a_block_has_its_hash_and_a_block_with_company_has_a_copy_number_in_the_note_order(self):
+        blocks = m.parse(self.note())
+        twin, other = blocks[0].key, blocks[1].key
+        self.assertEqual(m.refs(blocks), [f"{twin}-0", other, f"{twin}-1", f"{twin}-2"])
+        self.assertEqual(m.refs(m.parse(f"{FM}\n{self.A}\n\n{self.B}\n")), [m.parse(self.note())[0].key, other])
+
+    def test_locate_finds_the_copy_a_key_names(self):
+        blocks = m.parse(self.note())
+        for ref, index in zip(m.refs(blocks), range(4)):
+            self.assertEqual(m.locate(blocks, ref), index)
+        self.assertEqual(m.locate(blocks, blocks[1].key), 1)
+
+    def test_a_bare_hash_that_two_blocks_share_is_not_guessed_and_a_copy_that_is_not_there_is_not_found(self):
+        blocks = m.parse(self.note())
+        with self.assertRaises(m.AmbiguousBlock):
+            m.locate(blocks, blocks[0].key)
+        for ref in (f"{blocks[0].key}-3", f"{blocks[1].key}-1", "0" * 64, "0" * 64 + "-0", "nonsense", blocks[0].key + "-"):
+            with self.subTest(ref=ref), self.assertRaises(m.BlockNotFound):
+                m.locate(blocks, ref)
+
+    def test_remove_takes_only_the_copy_named_and_keeps_the_others_in_place(self):
+        refs = m.refs(m.parse(self.note()))
+        self.assertEqual(m.remove(self.note(), refs[0])[0], f"{FM}\n{self.B}\n\n{self.A}\n\n{self.A}\n")
+        self.assertEqual(m.remove(self.note(), refs[2])[0], f"{FM}\n{self.A}\n\n{self.B}\n\n{self.A}\n")
+        self.assertEqual(m.remove(self.note(), refs[3])[0], f"{FM}\n{self.A}\n\n{self.B}\n\n{self.A}\n")
+
+    def test_the_copies_go_from_the_last_to_the_first_without_their_keys_going_stale(self):
+        text, refs = self.note(), m.refs(m.parse(self.note()))
+        for ref in (refs[3], refs[2], refs[0]):  # the page lists the last block first
+            text = m.remove(text, ref)[0]
+        self.assertEqual(text, f"{FM}\n{self.B}\n")
+
+    def test_replace_changes_only_the_copy_named(self):
+        refs = m.refs(m.parse(self.note()))
+        self.assertEqual(m.replace(self.note(), refs[2], "changed")[0], f"{FM}\n{self.A}\n\n{self.B}\n\nchanged\n\n{self.A}\n")
+
+    def test_move_takes_a_copy_and_goes_before_a_copy(self):
+        refs = m.refs(m.parse(self.note()))
+        self.assertEqual(m.move(self.note(), refs[3], refs[0])[0], f"{FM}\n{self.A}\n\n{self.A}\n\n{self.B}\n\n{self.A}\n")  # the same text, so only the other block's place shows
+        self.assertEqual(m.move(self.note(), refs[1], refs[3])[0], f"{FM}\n{self.A}\n\n{self.A}\n\n{self.B}\n\n{self.A}\n")
+        self.assertEqual(m.move(self.note(), refs[0], None)[0], f"{FM}\n{self.B}\n\n{self.A}\n\n{self.A}\n\n{self.A}\n")
+
+    def test_a_move_before_a_later_copy_lands_before_that_one_and_not_the_first_of_them(self):
+        text = f"{FM}\n{self.A}\n\n{self.B}\n\n{self.A}\n\nlast\n"
+        refs = m.refs(m.parse(text))
+        self.assertEqual(m.move(text, refs[3], refs[2])[0], f"{FM}\n{self.A}\n\n{self.B}\n\nlast\n\n{self.A}\n")
+        self.assertEqual(m.move(text, refs[1], refs[2])[0], text)  # already just before it

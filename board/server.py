@@ -45,7 +45,7 @@ PAGE_TYPES = {  # the only files the page route serves, each with its own type (
     ".svg": "image/svg+xml",  # the favicon, a file of our own build, sent with the SVG policy (ADR 002, amendment of 2026-10-20)
 }
 MAX_BODY = images.MAX_BYTES * 4 // 3 + 64 * 1024  # a 25 MB image in base64, and the text around it
-_BRAND, _KEY = r"(?P<slug>[^/]+)", r"(?P<key>[0-9a-f]{64})"
+_BRAND, _KEY = r"(?P<slug>[^/]+)", r"(?P<key>[0-9a-f]{64}(?:-[0-9]{1,6})?)"
 _IMAGE = rf"(?P<kind>images|thumbs)/(?P<id>{moodboard.ID_PATTERN})\.(?P<ext>{'|'.join(images.CONTENT_TYPES)})"
 _LINK = rf"links/(?P<name>[0-9a-f]{{16}})(?:-(?P<ver>[0-9a-f]{{1,20}}))?\.(?P<ext>{'|'.join(links.ICON_TYPES)})"
 ROUTES = [

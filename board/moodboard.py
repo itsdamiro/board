@@ -9,7 +9,9 @@ What it promises, each with a test:
 - remove deletes the lines of one block, plus at most one blank line, and nothing else;
 - replace swaps the lines of one block for the lines of another and changes nothing else (ADR 009, the card's edit);
 - move puts one block's lines just before another block's, or at the end, and changes no byte of any block (ADR 001, amendment of 2026-10-20);
-- a block is found by the hash of its exact text, so a block edited since it was shown is refused;
+- a block is found by the hash of its exact text, so a block edited since it was shown is refused; a text that two blocks share is told
+  apart by a copy number after the hash (`<hash>-<copy>`, counted from 0 in the note's order), which the page is given for exactly those
+  blocks (ADR 001, amendment of 2026-10-20); a bare hash two blocks share is refused, not guessed at;
 - a text it cannot place safely (frontmatter never closed) is refused, not guessed at.
 A heading block and the frontmatter are not items; a heading block is a first line starting with `#` and every line under
 it up to the next blank line, so an item typed directly under a heading is hidden with it. A `[source](...)` line that is not an
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import Counter
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -156,16 +159,39 @@ def append(text: str, block: str) -> str:
 
 
 NOT_FOUND = "no block has this text now: it was changed or removed since it was shown"
+_REF = re.compile(r"(?P<hash>[0-9a-f]{64})(?:-(?P<copy>[0-9]{1,6}))?")
+
+
+def refs(blocks: list[Block]) -> list[str]:
+    """The key to give each block: its hash, or `<hash>-<copy>` when another block has the same text (copy counted from 0 in the note's order)."""
+    total, seen, out = Counter(b.key for b in blocks), Counter(), []
+    for b in blocks:
+        out.append(b.key if total[b.key] == 1 else f"{b.key}-{seen[b.key]}")
+        seen[b.key] += 1
+    return out
+
+
+def locate(blocks: list[Block], ref: str) -> int:
+    """The index in `blocks` of the block a key from `refs` names. Raises BlockNotFound (no such block now), or AmbiguousBlock for a bare hash that two blocks share."""
+    found = _REF.fullmatch(ref)
+    if found is None:
+        raise BlockNotFound(NOT_FOUND)
+    same = [i for i, b in enumerate(blocks) if b.key == found["hash"]]
+    if found["copy"] is not None:
+        if int(found["copy"]) >= len(same):
+            raise BlockNotFound(NOT_FOUND)
+        return same[int(found["copy"])]
+    if not same:
+        raise BlockNotFound(NOT_FOUND)
+    if len(same) > 1:
+        raise AmbiguousBlock(f"{len(same)} blocks have exactly this text; use the key with the copy number the brand view gives")
+    return same[0]
 
 
 def remove(text: str, key: str) -> tuple[str, Block]:
     """`text` without the one block whose key this is, and that block. Raises BlockNotFound or AmbiguousBlock."""
-    found = [b for b in parse(text) if b.key == key]
-    if not found:
-        raise BlockNotFound(NOT_FOUND)
-    if len(found) > 1:
-        raise AmbiguousBlock(f"{len(found)} blocks have exactly this text; remove the extra copies by hand first")
-    block = found[0]
+    blocks = parse(text)
+    block = blocks[locate(blocks, key)]
     lines = text.split("\n")
     del lines[block.start:block.end]
     if block.start < len(lines) and (block.start == 0 or _blank(lines[block.start - 1])):  # the line now at `start` is blank
@@ -182,12 +208,8 @@ def replace(text: str, key: str, block: str) -> tuple[str, Block]:
     Everything else in the note is kept byte for byte, the new block gets the line ending of the first line it replaces.
     Raises BlockNotFound or AmbiguousBlock. Only ADR 009's edit of a card uses it (it is the one place a block is changed).
     """
-    found = [b for b in parse(text) if b.key == key]
-    if not found:
-        raise BlockNotFound(NOT_FOUND)
-    if len(found) > 1:
-        raise AmbiguousBlock(f"{len(found)} blocks have exactly this text; remove the extra copies by hand first")
-    old = found[0]
+    blocks = parse(text)
+    old = blocks[locate(blocks, key)]
     if "\r" in block or any(_blank(line) for line in block.split("\n")):
         raise MoodboardError("a block has no blank line and no carriage return")
     lines = text.split("\n")
@@ -205,16 +227,8 @@ def move(text: str, key: str, before: str | None) -> tuple[str, Block]:
     """
     blocks = parse(text)
 
-    def find(wanted: str) -> int:
-        found = [i for i, b in enumerate(blocks) if b.key == wanted]
-        if not found:
-            raise BlockNotFound(NOT_FOUND)
-        if len(found) > 1:
-            raise AmbiguousBlock(f"{len(found)} blocks have exactly this text; remove the extra copies by hand first")
-        return found[0]
-
-    at = find(key)
-    anchor = None if before is None else find(before)
+    at = locate(blocks, key)
+    anchor = None if before is None else locate(blocks, before)
     if anchor == at:
         raise MoodboardError("a block cannot be moved before itself")
     block = blocks[at]
@@ -232,6 +246,6 @@ def move(text: str, key: str, before: str | None) -> tuple[str, Block]:
             body.append(cr)
         rest = body + moved + [""]
     else:
-        target = next(b for b in parse("\n".join(rest)) if b.key == blocks[anchor].key)
+        target = parse("\n".join(rest))[anchor - (at < anchor)]  # the same block in the note without the moved one
         rest[target.start:target.start] = moved + [cr]
     return "\n".join(rest), block

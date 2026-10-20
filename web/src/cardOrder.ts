@@ -10,16 +10,6 @@ function isNote(panel: Panel): boolean {
   return panel.title.toLowerCase() !== "moodboard"; // the grid shows what the Moodboard note holds
 }
 
-/** An item's key can repeat (two blocks with the same text), so a repeat gets a number. */
-function itemKeys(items: Item[]): string[] {
-  const seen = new Map<string, number>();
-  return items.map((item) => {
-    const n = seen.get(item.key) ?? 0;
-    seen.set(item.key, n + 1);
-    return n === 0 ? `item-${item.key}` : `item-${item.key}-${n}`;
-  });
-}
-
 type DatedPanel = Panel & { date: string };
 
 function hasDate(panel: Panel): panel is DatedPanel {
@@ -31,7 +21,7 @@ function goesBefore(note: DatedPanel, item: Item): boolean {
   return item.date === null || note.date > item.date;
 }
 
-/** An item with its card's key, which is unique on the page where the item's own key can repeat. */
+/** An item with its card's key (the item's own key with a prefix, so it cannot meet a note's). */
 export type PlacedItem = { key: string; item: Item };
 
 /** The item cards among `cards`, in order. */
@@ -48,12 +38,11 @@ export function orderCards(brand: Brand): Card[] {
   const dated = notes.filter(hasDate).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const undated = notes.filter((n) => !hasDate(n));
   const items = brand.moodboard.items;
-  const keys = itemKeys(items);
   let next = 0;
   const note = (panel: Panel): Card => ({ kind: "note", key: `note-${panel.title}`, panel });
-  items.forEach((item, n) => {
+  items.forEach((item) => {
     for (let waiting = dated[next]; waiting !== undefined && goesBefore(waiting, item); waiting = dated[++next]) cards.push(note(waiting));
-    cards.push({ kind: "item", key: keys[n] ?? `item-${n}`, item });
+    cards.push({ kind: "item", key: `item-${item.key}`, item });
   });
   dated.slice(next).forEach((panel) => cards.push(note(panel)));
   undated.forEach((panel) => cards.push(note(panel)));

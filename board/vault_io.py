@@ -40,11 +40,12 @@ def read_blocks(path: str) -> list[Block]:
 
 
 def block_with_key(path: str, key: str) -> Block:
-    """The block of the note with this key. Raises BlockNotFound. A text added more than once gives the first: the copies share an address, so one lookup serves them all."""
-    found = [b for b in read_blocks(path) if b.key == key]
-    if not found:
-        raise moodboard.BlockNotFound(moodboard.NOT_FOUND)
-    return found[0]
+    """The block of the note with this key. Raises BlockNotFound. A bare hash that two blocks share gives the first: they share an address, so one lookup serves them all."""
+    blocks = read_blocks(path)
+    try:
+        return blocks[moodboard.locate(blocks, key)]
+    except moodboard.AmbiguousBlock:
+        return next(b for b in blocks if b.key == key)
 
 
 @contextlib.contextmanager

@@ -79,8 +79,8 @@ def brand_view(vault_path: str, slug: str) -> dict:
         try:
             blocks = vault_io.read_blocks(path)
             views, date = [], None
-            for block in blocks:  # in file order, which is the order they were added: an item with no date of its own takes the one before it
-                view = item_view(vault_path, slug, block)
+            for block, key in zip(blocks, moodboard.refs(blocks)):  # in file order, which is the order they were added: an item with no date of its own takes the one before it
+                view = {**item_view(vault_path, slug, block), "key": key}  # the key names the copy when another block has the same text
                 view["date"] = date = view["date"] or date
                 views.append(view)
             moodboard_view["items"] = views[::-1]

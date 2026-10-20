@@ -689,7 +689,8 @@ describe("the cards", () => {
 
     it("asks about two picked blocks with the same text without a console error", async () => {
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
-      installServer([brandView("alpha", {}, [item({ key: "same", description: "twice" }), item({ key: "same", description: "twice" })])]);
+      // what the server gives for two blocks with one text: the key names the copy, and the page lists the note last to first
+      const { calls } = installServer([brandView("alpha", {}, [item({ key: "same-1", description: "twice" }), item({ key: "same-0", description: "twice" })])]);
       render(<App />);
       await shown("alpha");
       screen.getAllByText("twice", { selector: "li p" }).forEach((words) => fireEvent.click(words, { shiftKey: true }));
@@ -697,6 +698,13 @@ describe("the cards", () => {
       const dialog = await screen.findByRole("dialog", { name: "Delete 2 items?" });
       expect(within(dialog).getAllByText("twice")).toHaveLength(2);
       expect(error).not.toHaveBeenCalled();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+      await waitFor(() => expect(screen.queryByText("twice")).toBeNull());
+      // the higher copy goes first, so the number of the other is still good when its turn comes
+      expect(calls.filter((call) => call.method === "DELETE").map((call) => call.path)).toEqual([
+        "/api/brands/alpha/items/same-1",
+        "/api/brands/alpha/items/same-0",
+      ]);
     });
 
     it("leaves Escape and the + and - keys to an open viewer, and to a field being typed in", async () => {
@@ -855,7 +863,7 @@ describe("the cards", () => {
 
   it("shows two blocks with the same text both", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    installServer([brandView("alpha", {}, [item({ key: "same", description: "twice" }), item({ key: "same", description: "twice" })])]);
+    installServer([brandView("alpha", {}, [item({ key: "same-1", description: "twice" }), item({ key: "same-0", description: "twice" })])]);
     render(<App />);
     await shown("alpha");
     expect(screen.getAllByText("twice")).toHaveLength(2);

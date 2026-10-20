@@ -822,6 +822,48 @@ class MoveRouteTest(ServerCase):
         self.assertEqual(self.move("a" * 64, {"before": None}, "nobody")[0], 404)
 
 
+class CopyKeyRouteTest(ServerCase):
+    """Blocks with the same text (ADR 001, amendment of 2026-10-20): the brand view gives each a key that names its copy, and the routes take it."""
+
+    def setUp(self):
+        super().setUp()
+        for words in ("twin", "other", "twin", "twin"):
+            self.add(words)
+
+    def shown(self):
+        return self.json("GET", "/api/brands/alpha")[1]["moodboard"]["items"]
+
+    def twins(self):
+        return [i["key"] for i in self.shown() if i["description"] == "twin"]
+
+    def test_a_copy_is_deleted_200_and_no_other_copy_goes(self):
+        before = self.moodboard_text()
+        key = self.twins()[1]
+        self.assertEqual(self.json("DELETE", f"/api/brands/alpha/items/{key}"), (200, {"deleted": key}))
+        self.assertEqual(self.moodboard_text(), before.replace("\n\ntwin\n\ntwin\n", "\n\ntwin\n", 1))
+        self.assertEqual([i["description"] for i in self.shown()], ["twin", "other", "twin"])
+
+    def test_the_bare_hash_of_a_shared_text_is_409_and_a_copy_that_is_not_there_is_409(self):
+        before = self.moodboard_text()
+        bare = self.twins()[0][:64]
+        self.assertEqual(self.json("DELETE", f"/api/brands/alpha/items/{bare}")[0], 409)
+        self.assertEqual(self.json("DELETE", f"/api/brands/alpha/items/{bare}-9")[0], 409)
+        self.assertEqual(self.json("POST", f"/api/brands/alpha/items/{bare}-9/move", {"before": None})[0], 409)
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_copy_is_moved_and_a_move_can_go_before_a_copy(self):
+        other = next(i["key"] for i in self.shown() if i["description"] == "other")
+        self.assertEqual(self.json("POST", f"/api/brands/alpha/items/{other}/move", {"before": self.twins()[0]})[0], 200)
+        self.assertEqual([i["description"] for i in self.shown()], ["twin", "other", "twin", "twin"])
+        self.assertEqual(self.json("POST", f"/api/brands/alpha/items/{self.twins()[2]}/move", {"before": None})[0], 200)
+
+    def test_a_key_with_a_copy_number_that_is_not_one_is_404(self):
+        for tail in ("-", "-x", "--1", "-1-2", "-1234567"):
+            with self.subTest(tail=tail):
+                self.assertEqual(self.json("DELETE", f"/api/brands/alpha/items/{'a' * 64}{tail}")[0], 404)
+        self.assertEqual(self.json("POST", f"/api/brands/alpha/items/{'a' * 64}/move", {"before": "a" * 64 + "-x"})[0], 400)
+
+
 if __name__ == "__main__":
     unittest.main()
 

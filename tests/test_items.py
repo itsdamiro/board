@@ -715,3 +715,66 @@ class MoveItemTest(VaultCase):
         self.make_brand("beta", moodboard=None)
         with self.assertRaises(items.MissingMoodboard):
             items.move_item(self.vault, "beta", "a" * 64, None)
+
+
+class CopyKeyItemTest(VaultCase):
+    """Blocks with the same text (ADR 001, amendment of 2026-10-20): each is given a key that names its copy, and every write takes it."""
+
+    def setUp(self):
+        super().setUp()
+        for words in ("twin", "other", "twin", "twin"):
+            items.add_item(self.vault, "alpha", words, None, None)
+
+    def shown(self):
+        return items.brand_view(self.vault, "alpha")["moodboard"]["items"]
+
+    def keys(self):
+        return {i["description"]: [x["key"] for x in self.shown() if x["description"] == i["description"]] for i in self.shown()}
+
+    def test_the_view_gives_each_copy_its_own_key_and_a_text_added_once_its_plain_hash(self):
+        twin, other = self.keys()["twin"], self.keys()["other"]
+        self.assertEqual(len(set(twin)), 3)
+        self.assertEqual([k[64:] for k in twin], ["-2", "-1", "-0"])  # the note's order, shown last to first
+        self.assertEqual(len(other[0]), 64)
+
+    def test_deleting_a_copy_removes_that_one_and_no_other(self):
+        before = self.moodboard_text()
+        middle = self.keys()["twin"][1]  # copy 1, the second twin in the note
+        items.delete_item(self.vault, "alpha", middle)
+        self.assertEqual(self.moodboard_text(), before.replace("\n\ntwin\n\ntwin\n", "\n\ntwin\n", 1))
+        self.assertEqual([i["description"] for i in self.shown()], ["twin", "other", "twin"])
+        self.assertEqual(len(self.keys()["twin"]), 2)
+
+    def test_the_picked_copies_are_deleted_one_after_the_other_in_the_order_they_are_shown(self):
+        for key in self.keys()["twin"]:  # last copy first: each key is still good when its turn comes
+            items.delete_item(self.vault, "alpha", key)
+        self.assertEqual([i["description"] for i in self.shown()], ["other"])
+
+    def test_a_bare_hash_that_two_blocks_share_is_still_refused_for_every_write(self):
+        bare = self.keys()["twin"][0][:64]
+        before = self.moodboard_text()
+        for act in (lambda: items.delete_item(self.vault, "alpha", bare), lambda: items.move_item(self.vault, "alpha", bare, None),
+                    lambda: items.move_item(self.vault, "alpha", self.keys()["other"][0], bare)):
+            with self.assertRaises(moodboard.AmbiguousBlock):
+                act()
+        self.assertEqual(self.moodboard_text(), before)
+
+    def test_a_copy_that_is_no_longer_there_is_refused(self):
+        stale = self.keys()["twin"][0]  # copy 2
+        items.delete_item(self.vault, "alpha", self.keys()["twin"][1])
+        with self.assertRaises(moodboard.BlockNotFound):
+            items.delete_item(self.vault, "alpha", stale)
+
+    def test_a_copy_is_moved_and_a_move_goes_before_a_copy(self):
+        keys = self.keys()
+        items.move_item(self.vault, "alpha", keys["other"][0], keys["twin"][0])  # before the last twin in the note
+        self.assertEqual([i["description"] for i in self.shown()], ["twin", "other", "twin", "twin"])
+        items.move_item(self.vault, "alpha", self.keys()["twin"][2], None)  # the first twin to the end of the note
+        self.assertEqual([i["description"] for i in self.shown()], ["twin", "twin", "other", "twin"])
+
+    def test_a_lookup_takes_the_key_of_a_copy(self):
+        items.add_item(self.vault, "alpha", "page", "https://example.com", None)
+        items.add_item(self.vault, "alpha", "page", "https://example.com", None)
+        self.lookup.return_value = lookup.Found(title="A page")
+        key = next(i["key"] for i in self.shown() if i["description"] == "page")
+        self.assertEqual(items.look_up_item(self.vault, "alpha", key)["title"], "A page")

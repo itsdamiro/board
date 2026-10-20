@@ -28,13 +28,14 @@ describe("moveRequest", () => {
     expect(moveRequest(shown, "item-a", "item-x", "above")).toBeNull();
   });
 
-  it("uses the item's own key, which the card's key may repeat as a number", () => {
+  it("uses the item's own key, which names the copy when another block has the same words", () => {
     const twins: PlacedItem[] = [
-      { key: "item-same", item: item({ key: "same" }) },
-      { key: "item-same-1", item: item({ key: "same" }) },
+      { key: "item-hash-1", item: item({ key: "hash-1" }) },
+      { key: "item-hash-0", item: item({ key: "hash-0" }) },
       { key: "item-z", item: item({ key: "z" }) },
     ];
-    expect(moveRequest(twins, "item-z", "item-same-1", "above")).toEqual({ before: "same" });
+    expect(moveRequest(twins, "item-z", "item-hash-0", "above")).toEqual({ before: "hash-1" });
+    expect(moveRequest(twins, "item-hash-1", "item-z", "below")).toEqual({ before: "z" });
   });
 });
 
